@@ -1,0 +1,188 @@
+#################################################
+# Species Classification V5
+# B. Model forest-species relationships
+# Anna Drake
+# September 7, 2025
+################################################
+require(dismo)
+require(gbm)
+require(terra)
+require(sf)
+require(dplyr)
+require(tidyr)
+require(hydroGOF)
+require(ggplot2)
+require(tidytext)
+require(scico)
+
+`%notin%` <- Negate(`%in%`)
+
+# Set up path for data on google drive and output folder ----
+root<-"G:/Shared drives/BAM_NationalModels5" #PC link
+out<-"C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage"
+setwd(out)
+
+#1. Set up boundaries -------------------
+
+# Canada ----
+can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
+  st_transform(crs=crs("EPSG:3348")) # Canadian boundary
+
+# BCRs ----
+bcr<- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>%
+  st_transform(crs=crs("EPSG:3348"))|> st_crop(can)%>% st_intersection(can)
+
+# BCR list -----
+bcrs<-paste0("can",bcr$subUnit) # BCR names
+
+#3. Get species list ----
+
+files.raw <- data.frame(path = list.files(file.path(root, "output", "07_predictions"), recursive = TRUE, full.names = TRUE))
+
+files <- files.raw |>
+  separate(path, into=c("drive", "f1", "f2","f3", "f4", "sppf", "file"), remove=FALSE, sep="/") |>
+  separate(file, into=c("spp","bcr", "year","filetype")) |>
+  mutate(year = as.numeric(year))
+
+spl<-unique(files$spp)
+
+# Extract forest/non-forest birds  ###########
+
+wetland<-c("ALFL","COYE","WISN","SPSA","NESP","MAWR","YHBL","RWBL","SEWR","SWSP","BEKI","SOSA","GRYE","KILL","LEYE","UPSA","RUBL","DUNL")
+grassland<-c("BOBO","GRSP","HOLA","LCSP","SAVS","UPSA","VESP")
+nonforest<-c("AMCR","AMGO","AMPI","ATSP","BAOR","BANS","BARS","BEKI","BBMA","BLJA",
+             "BGGN","BOBO","BRBL","BRTH","BHCO","CHSP","CCSP","CLSW","COGR","COYE","EABL","EAKI","EAPH","EATO","EUST","FISP","FOSP",
+             "GCSP","GWWA","GRSP","GRCA","GRYE","HOLA","HOSP","HOWR","INBU","KILL","LALO","LCSP","LEYE","LISP","MAWR","MOBL","MODO","NESP",
+             "NOCA","PAWA","RWBL","ROPI","RUBL","SAVS","SEWR","SOSA","SOSP","SPSA","SWSP","TRES","UPSA","VESP","WCSP","WIPT","WISN",
+             "WIWA","YHBL","ALFL","AMRO","BBCU","YEWA","CORA","NOFL","CEDW")
+#irruptive<-c("WWCR","RECR","PISI","EVGR","RBGR","PIGR")
+anthr<-c("HOSP","ROPI","EUST")# keep anthropological expansion spp? If loss is driven by these species, do we want them?
+open<-c("WIPT","ROPT","WIPT","RKPT","RLHA","GYRF","SNOW","BLUE","NOWH","EYWG","HASP","LALO","SMLO","SNBU","PEFA","AMPI")  # adding AMPI keeping CHCH, HORE and CORE
+
+exclude<-c(wetland,grassland,open,anthr)%>%unique()
+
+spl<-spl[spl %notin% exclude] # 121 forest species after excluding other groups
+
+# Produce a BCR-specific species list using 5% cut off and minimum rate
+occurSp<-read.csv("SurveySpeciesOccur_byBCR.csv")
+occurMax<-occurSp%>%group_by(species)%>%summarise(max=max(rate))
+occurSp<-merge(occurSp,occurMax,by="species")
+occurSp$relrate<-occurSp$rate/occurSp$max
+bcr_Species<-subset(occurSp,occurSp$rate>=0.001 & occurSp$relrate>=0.05)
+
+#2. Load prediction co-variates ----
+Covar<-read.csv(file.path(out,"ClassificationCovariates.csv"))
+names(Covar)
+Covar$LocAge<-as.numeric(Covar$LocAge)
+Covar$LandAge<-as.numeric(Covar$LandAge)
+Covar<-Covar[c("id","LocAge",
+               "Loc_closure","LandAge",
+               "Land_closure","Loc_pConifer",
+               "Land_pConifer")]
+
+##########################################
+# For each BCR run each species-boot
+############################################
+
+# Load V5 data package ----
+load(file.path(root, "data/04_NM5.0_data_stratify.Rdata"))
+
+# not using V5 covariates
+rm('cov')
+gc()
+#rerun 9??
+# Select BCR -----
+for (i in c(2,4,6:12)){#length(bcrs))) #{ #start of BCR i
+  bcrn.i<-bcrs[i]
+
+  ## Get BCR-specific spp List ----
+  bcr.spp <- bcr_Species |> dplyr::filter(BCR==bcrn.i) |> pull(species)
+  bcr.spp<-subset(bcr.spp, bcr.spp %in% spl) #only those with models currently
+  print(paste(bcrn.i, "has", length(bcr.spp)))
+  ##################################
+  # Set up model output
+  ##################################
+  
+  # Lists to hold outputs
+  err<-c() #store errors
+  Selected<-vector(mode = "list", length = length(bcr.spp)) # hold 32 boots per species
+  p<-0 #index
+
+  for (k in c(1:length(bcr.spp))) { # start of species k
+      spp.i<-bcr.spp[k]
+      p<-p+1 # update index
+      
+      ##############################
+      # Training data
+      ##############################
+      
+      # Select surveys  -----  
+      visit.i <- bcrlist[bcrlist[,bcrn.i]>0, c("id", bcrn.i)] |> 
+        dplyr::filter(id %in% bootlist$b1)
+
+      
+      # Get data -----
+      bird.i <- bird[as.character(visit.i$id), spp.i, drop = FALSE]
+
+   dat.i <- visit.i %>%
+      dplyr::select(id) %>%
+      left_join(Covar, by = "id") %>%
+      left_join(dplyr::select(visit, id, year, method), by = "id") %>%
+      mutate(
+        method = case_match(method, 
+                            "PC" ~ 0, 
+                            "eBird" ~ 1, 
+                            .default = 2),
+        count = as.numeric(bird.i) # Add the bird counts from the matrix
+      ) %>%
+      # Relocate 'count' to column 1 to match your gbm.y = 1 setting
+      relocate(count)
+  
+      #Get and match offsets----
+    off.i <- offsets[match(dat.i$id, offsets$id), spp.i]
+
+lr.i=0.001
+lr.min <- 1e-10
+lr.max <- 0.5
+
+m.i <- try(dismo::gbm.step(data = as.data.frame(dat.i),
+                           gbm.x=c(3:ncol(dat.i)),
+                           gbm.y=1,
+                           offset=off.i,
+                           tree.complexity = 3,
+                           learning.rate = lr.i,
+                           family="poisson",
+                           verbose=FALSE,
+                           plot.main = FALSE))
+
+
+trees.i <- ifelse(class(m.i)%in% c("NULL", "try-error"), 0, m.i$n.trees)
+
+#rerun if lr too high (small sample size e.g., can3)
+#stop at a certain lr and remove that model from the to-do list
+while((trees.i < 1000 & lr.i >= lr.min) |
+      (trees.i==10000 & lr.i <= lr.max)){
+  
+  if(trees.i < 1000){ lr.i <- lr.i/10}
+  if(trees.i==10000 & lr.i < 0.1){ lr.i <- lr.i*10}
+   
+  set.seed(1234)
+  m.i <- try(dismo::gbm.step(data=dat.i,
+                             gbm.x=c(3:ncol(dat.i)),
+                             gbm.y=1,
+                             offset=off.i,
+                             tree.complexity = 3,
+                             learning.rate = lr.i,
+                             family="poisson"))
+  
+  trees.i <- ifelse(class(m.i)%in% c("NULL", "try-error"), 0, m.i$n.trees)
+ }
+
+print(round(k/length(bcr.spp)))
+Selected[[p]]<-data.frame(trees=trees.i,lr=lr.i,spp=spp.i,bcr=bcrn.i)
+gc()
+} # end of species
+
+output<-do.call(rbind.data.frame,Selected)
+write.csv(output,paste0("LR_Classification",bcrn.i,".csv"))
+ } # end of bcr
