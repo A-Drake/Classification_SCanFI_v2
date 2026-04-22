@@ -1,0 +1,103 @@
+########################
+# Combine RDS files from 
+# CC script Classification_results:
+# Anna Drake
+# April 21,2026
+########################
+
+library(data.table)
+library(dplyr)
+
+
+`%notin%` <- Negate(`%in%`)
+
+out_dir <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/Model Outputs"
+
+# Get the BCR species listing from the tuning object - incomplete for some tuned species on CC
+splist<-read.csv("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data/BCR_Sp_LearningRates_iter2.csv")
+BCRlisting<-unique(splist$bcr)
+BCRlisting<-BCRlisting[-c(2,6)]
+#right now have 1517*32 - 48544 files expected
+
+########################################################################################################################
+# Check that all species have the right number of bootstraps and ID missing values to feed back to the Model script
+#########################################################################################################################
+p=0
+Bootcount<-c(1:32)
+dframe<-list()
+for (i in 1:length(BCRlisting)){
+  # Define the BCR to compile
+  target <- BCRlisting[i]
+
+  #get list of iterations for this BCR
+  btag.i<- subset(splist,splist$bcr==target)
+
+for(j in 1:length(btag.i$spp)) {
+  spp.j<-btag.i$spp[j]
+  p<-p+1
+  bcr_test <- list.files(out_dir, 
+                          pattern = paste0("Hab_",spp.j,"_",target, ".*\\.RDS$"), 
+                          full.names = TRUE)
+  
+# which boots are missing  
+missing<-Bootcount[Bootcount %notin% as.numeric(substr(bcr_test,128,129))]
+if(min(missing)==Inf){missing<-c(1:32)}
+dframe[[p]]<-data.frame(spp=spp.j, bcr=target)
+dframe[[p]]$string=list(missing)
+}}
+
+missingval<-do.call(rbind,dframe)
+missingboots<-merge(splist,missingval,by=c("bcr","spp"), all.x=F,all.y=T)
+write_rds(missingboots,"MissingBoots.RDS")
+### This feeds into the Compute Canada Script to update the missing boots....
+
+#############################################################################
+# Once missingboots are resolved - compile the bootstraps
+############################################################################################
+# Import the bootstrap list for each species in the BCR ----
+
+
+for (i in 1:length(BCRlisting)){
+# Define the BCR to compile
+target <- BCRlisting[i]
+
+#get list of iterations for this BCR
+btag.i<- subset(splist,splist$bcr==target)
+
+# 1. List all files for this specific BCR
+bcr_files <- list.files(out_dir, 
+                        pattern = paste0(target, ".*\\.RDS$"), 
+                        full.names = TRUE)
+if(length(bcr_files)==0){
+spp_compiled<-0
+next }
+  
+# 2. Read and stack ---------
+spp_compiled <- rbindlist(lapply(bcr_files, readRDS), fill = TRUE)
+
+# Check everything is there before writing out the BCR stack ----
+ck<-subset(splist,splist$bcr==target)
+sumry<-spp_compiled%>%group_by(species,Var,Val) %>% summarize(tot=length(species)) 
+
+
+if(length(ck$spp)==length(unique(spp_compiled$species)) & all(sumry$tot==32)){
+  print(paste0(target,": All Species in tuning; all boots present"))
+  saveRDS(spp_compiled, file.path(out_dir, paste0("CompiledAgeModel_", target, ".RDS")))
+  }
+  
+if(any(sumry$tot!=32)){
+  print(paste0("In ", target," ", 32-min(sumry$tot)," boots missing - not writing out"))}
+
+if(length(ck$spp)!=length(unique(spp_compiled$species))){
+  print(paste(target,"expected species:", length(ck$spp), "Actual:", length(unique(spp_compiled$species))))
+    }
+
+# Note the species boots that are still missing for analysis
+spp_compiled$btag<-paste(spp_compiled$species,target) 
+missing<-rbind(missing,btag.i[btag.i %notin% spp_compiled$btag])
+rm(spp_compiled)
+gc()
+}
+
+RemainingJobs<-subset(splist,splist$tag %in% missing$tag)
+write.csv(RemainingJobs,"MissingJobs.csv")
