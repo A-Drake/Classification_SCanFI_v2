@@ -1,0 +1,125 @@
+###############################################
+# Species Classification V5 - HPC Optimized
+# Modified from Elly Knight's script
+# April 22, 2026
+################################################
+library(dismo)
+library(gbm)
+library(dplyr)
+library(tidyr)
+
+# Get command line arguments (Task ID from Slurm)
+args <- commandArgs(trailingOnly = TRUE)
+task_id <- as.numeric(args[1]) 
+
+# Define Paths (Use environment variables or scratch space)
+# On HPC, always use $SCRATCH for high-speed I/O
+root <- "./data" 
+out <- "./results"
+dir.create(out, showWarnings = FALSE)
+
+# 1. Load Static Data once
+# In a real HPC setup, we'd pre-process these into a single clean RDS file 
+# to avoid 1000 tasks reading 1000 CSVs at once.
+#bcr_Species <- read.csv(file.path(root,"testCC.csv"))
+#bcr_Species <- read.csv(file.path(root,"bcr_Species.csv"))
+bcr_Species <- read.csv(file.path(root,"BCR_Species_iter2.csv"))
+Covar <- read.csv(file.path(root,"ClassificationCovariates.csv")) %>%
+  mutate(LocAge = as.numeric(LocAge), LandAge = as.numeric(LandAge)) %>%
+  select(id, LocAge, Loc_closure, LandAge, Land_closure, Loc_pConifer, Land_pConifer)
+
+load(file.path(root, "04_NM5.0_data_stratify.Rdata"))
+
+# 2. Determine which BCR/Species this specific task handles
+# This logic maps the Slurm Task ID to a specific Species-BCR combination
+all_tasks <- bcr_Species %>%
+  arrange(BCR, species)
+
+current_task <- all_tasks[task_id, ]
+spp.i <- current_task$species
+bcrn.i <- current_task$BCR
+
+message(paste("Processing:", spp.i, "in BCR:", bcrn.i))
+
+# 3. Data Prep for this specific task
+visit.i <- bcrlist[bcrlist[,bcrn.i] > 0, c("id", bcrn.i)] %>%
+  filter(id %in% bootlist$b1)
+
+bird.i <- bird[as.character(visit.i$id), spp.i, drop = FALSE]
+
+dat.i <- visit.i %>%
+  select(id) %>%
+  left_join(Covar, by = "id") %>%
+  left_join(select(visit, id, year, method), by = "id") %>%
+  mutate(
+    method = case_match(method, "PC" ~ 0, "eBird" ~ 1, .default = 2),
+    count = as.numeric(bird.i)
+  ) %>%
+  relocate(count)
+
+off.i <- offsets[match(dat.i$id, offsets$id), spp.i]
+
+# 4. GBM Optimization Loop
+lr.i <- 0.001
+lr.min <- 1e-10
+lr.max <- 0.5
+trees.i <- 0
+
+# Function for the GBM step to keep code DRY
+run_gbm <- function(lr) {
+  try(dismo::gbm.step(
+    data = as.data.frame(dat.i),
+    gbm.x = 3:ncol(dat.i),
+    gbm.y = 1,
+    offset = off.i,
+    tree.complexity = 3,
+    learning.rate = lr,
+    family = "poisson",
+    verbose = FALSE,
+    plot.main = FALSE
+  ), silent = TRUE)
+}
+
+m.i <- run_gbm(lr.i)
+trees.i <- if(inherits(m.i, "try-error") || is.null(m.i)) 0 else m.i$n.trees
+
+# Learning Rate adjustment loop
+while((trees.i < 1000 && lr.i >= lr.min) || (trees.i == 10000 && lr.i <= lr.max)){
+  if(trees.i < 1000) { lr.i <- lr.i / 10 }
+  if(trees.i == 10000 && lr.i < 0.1) { lr.i <- lr.i * 10 }
+  
+  set.seed(1234)
+  m.i <- run_gbm(lr.i)
+  trees.i <- if(inherits(m.i, "try-error") || is.null(m.i)) 0 else m.i$n.trees
+}
+
+# 5. Save Output
+res <- data.frame(trees=trees.i, lr=lr.i, spp=spp.i, bcr=bcrn.i)
+write.csv(res, file.path(out, paste0("LR_", bcrn.i, "_", spp.i, ".csv")), row.names = FALSE)
+
+############# END OF TUNING ##########################
+# SH file content:
+
+#!/bin/bash
+#SBATCH --account=def-bayne
+#SBATCH --mail-user=drake.ae@gmail.com
+#SBATCH --mail-type=ALL
+#SBATCH --job-name=Tuning
+#SBATCH --time=02:00:00              # Time per species (usually < 2h)
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1            # GBM is single-threaded here
+#SBATCH --mem=10G                     # Adjust to data size
+#SBATCH --array=1-2%50            # Total number of Species/BCR combos allowing only 50 at a time
+#SBATCH --output=logs/%x-%A_%a.out
+
+# Purge and load the base environment
+
+module purge
+module load gcc/12.3
+module load r/4.4.0
+module load proj/9.2.0 gdal/3.9.1 geos/3.12.0
+
+# Execute the R script, passing the Array Task ID as an argument
+
+Rscript ComputeCanada_Tuning.R $SLURM_ARRAY_TASK_ID
