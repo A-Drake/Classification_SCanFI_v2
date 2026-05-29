@@ -1,0 +1,115 @@
+###############################
+# Ib Compare performance of reduced models - Combine outputs - assess
+# Anna Drake
+# May 27, 2026
+##################
+
+library(data.table)
+library(purrr)
+library(scales)
+library(dplyr)
+
+# Define non-forest species
+nonforest<-c("AMCR","AMGO","AMPI","ATSP","BAOR","BANS","BARS","BEKI","BBMA","BLJA",
+             "BGGN","BOBO","BRBL","BRTH","BHCO","CHSP","CCSP","CLSW","COGR","COYE","EABL","EAKI","EAPH","EATO","EUST","FISP","FOSP",
+             "GCSP","GWWA","GRSP","GRCA","GRYE","HOLA","HOSP","HOWR","INBU","KILL","LALO","LCSP","LEYE","LISP","MAWR","MOBL","MODO","NESP",
+             "NOCA","PAWA","RWBL","ROPI","RUBL","SAVS","SEWR","SOSA","SOSP","SPSA","SWSP","TRES","UPSA","VESP","WCSP","WIPT","WISN",
+             "WIWA","YHBL","ALFL","AMRO","BBCU","YEWA","CORA","NOFL","CEDW","YBCU","WITU") #added YBCU and WITU to this list
+#retain ALFL?
+wetland<-c("ALFL","COYE","WISN","SPSA","NESP","MAWR","YHBL","RWBL","SEWR","SWSP","BEKI","SOSA","GRYE","KILL","LEYE","UPSA","RUBL","DUNL")
+grassland<-c("BOBO","GRSP","HOLA","LCSP","SAVS","UPSA","VESP")
+
+irruptive<-c("WWCR","RECR","PISI","EVGR","RBGR","PIGR") # irruptive
+anthr<-c("HOSP","ROPI","EUST")  # anthropological expansion spp
+open<-c("WIPT","ROPT","WIPT","RKPT","SNOW","BLUE","NOWH","EYWG","HASP","LALO","SMLO","SNBU","PEFA","AMPI")  # adding AMPI, removing CHCH, HORE and CORE  #arctic open land species
+
+
+
+root<-"C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code"
+csv_files <- list.files(path =file.path(root,"FullVReducedModels"),
+                        pattern = "\\.csv$")
+
+# 2. Map fread over the files and bind them instantly
+combined_data <- rbindlist(lapply(file.path(root,"FullVReducedModels",csv_files), fread), use.names = TRUE, fill = TRUE)
+
+#This is dev_full-=dev_red so consistantly (-) means the full model is better consistantly (+) means the reduced model is better
+
+View(combined_data)
+combined_data$ID<-paste(combined_data$BCR,combined_data$species,sep="_")
+combined_data<-subset(combined_data,combined_data$species %notin% c(open,wetland,grassland))
+Jobs$ID
+
+# Missing records?
+Jobs<- read.csv(file.path(root,"data/CC_Job_lists/ModelCompareJobs.csv"))
+Jobs<-Jobs%>%subset(.,.$spp %notin% c(open,wetland,grassland))%>%subset(.,.$ID %notin% combined_data$ID)
+write.csv(Jobs,file.path(root,"data/CC_Job_lists/ModelCompareJobs.csv"))
+
+# View outputs -----
+library(ggplot2)
+library(forcats)
+
+data_ordered <- combined_data %>%
+  # Reorder species levels by the mean of m_DevDiff across all BCRs
+  mutate(species = fct_reorder(species, l95_DevDiff, .fun = mean, .desc = TRUE))
+
+# Define a custom signed square root transformation function
+signed_sqrt_trans <- function() {
+  trans_new(
+    name = "signed_sqrt",
+    transform = function(x) sign(x) * sqrt(abs(x)),
+    inverse = function(x) sign(x) * (x^2)
+  )
+}
+
+
+
+# Define a consistent dodge width so points and error bars align perfectly
+dodge_width <- 0.3 
+
+ggplot(data_ordered, aes(x = species, y = Dev_Diff, color = BCR)) +
+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50", 
+             linewidth = 0.6) +
+  scale_y_continuous(trans = signed_sqrt_trans()) +  
+  #95% Quantile Intervals
+  geom_errorbar(
+    aes(ymin = l95_DevDiff, ymax = u95_DevDiff),
+    position = position_dodge(width = dodge_width),
+    width = 0.3,         # Width of the horizontal caps on the error bars
+    linewidth = 0.3,
+    alpha = 0.8
+  ) +
+  
+  # Plot the Mean Delta Deviance points
+  geom_point(position = position_dodge(width = dodge_width),
+    size = 1, stroke = 0.5) +
+  
+  # Labels and Styling
+  labs(title = "Out-of-Sample Delta Deviance by Species and BCR",
+    subtitle = "Positive values favor the Full Model; Intervals crossing 0 indicate equivalence",
+    x = "Species",
+    y = expression(Delta * " Deviance (Reduced - Full)"),
+    color = "Bird Conservation\nRegion (BCR)"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(), # Cleans up categorical x-axis space
+    axis.text.x = element_text(angle = 90, hjust = 1), # Tilts species codes
+    legend.position = "right",
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(color = "gray30", size = 10)
+  )
+
+
+# label outcomes
+data_ordered<-data_ordered %>% mutate(
+    decision = case_when(
+      l95_DevDiff > 0 ~ "Regional values important",
+      u95_DevDiff < 0 ~ "Regional values harm model performance",
+      TRUE           ~ "Local-values-only are equivalent"
+    ))
+  
+table(data_ordered$decision, data_ordered$species)
+table(data_ordered$decision)
