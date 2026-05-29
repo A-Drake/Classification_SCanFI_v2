@@ -1,0 +1,203 @@
+########################################################
+# E1.Ensure value grid is complete and roll-mean values
+# Anna Drake
+# April 24, 2026
+########################################################
+
+require(zoo)
+require(dplyr)
+require(tidyr)
+require(hydroGOF)
+
+`%notin%` <- Negate(`%in%`)
+
+# Define non-forest species
+nonforest<-c("AMCR","AMGO","AMPI","ATSP","BAOR","BANS","BARS","BEKI","BBMA","BLJA",
+             "BGGN","BOBO","BRBL","BRTH","BHCO","CHSP","CCSP","CLSW","COGR","COYE","EABL","EAKI","EAPH","EATO","EUST","FISP","FOSP",
+             "GCSP","GWWA","GRSP","GRCA","GRYE","HOLA","HOSP","HOWR","INBU","KILL","LALO","LCSP","LEYE","LISP","MAWR","MOBL","MODO","NESP",
+             "NOCA","PAWA","RWBL","ROPI","RUBL","SAVS","SEWR","SOSA","SOSP","SPSA","SWSP","TRES","UPSA","VESP","WCSP","WIPT","WISN",
+             "WIWA","YHBL","ALFL","AMRO","BBCU","YEWA","CORA","NOFL","CEDW")
+
+# Set up path for output folder ----
+out<-"C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage"
+setwd(out)
+
+##########################
+# Import all-BCR level values 
+##########################
+
+BCRO<-read.csv(file.path(out,"Compute Canada Code","data","BCRlevelVals_Scanfi2.csv")) 
+BCRO <- BCRO %>% 
+  select(-X, -Class)
+MaxDat<-BCRO%>%group_by(type,BCR)%>%summarize(max=max(value, na.rm=T))
+bcrn<-unique(BCRO$BCR)
+
+# Ensure values sum to 1.
+ck<-BCRO%>%group_by(BCR,type)%>%summarize(proptot=sum(Prop))
+if(all(round(ck$proptot,0)==1)){print("All proportions sum to 1")}
+
+##################################################################
+# Determine use and availability for each BCR -----
+##################################################################
+
+# Set up list to hold outputs ---
+
+for (i in c(1:length(bcrn))){
+  
+  bcrn.i<-bcrn[i] 
+  MaxDat.i<-subset(MaxDat,MaxDat$BCR==bcrn.i)
+#-------------------------------------------------------  
+# Build complete value grid for each BCR 
+#-------------------------------------------------------
+  
+  master_template <- data.frame(
+    type = c(rep("LandAge", MaxDat.i$max[MaxDat.i$type=="LandAge"]+1),
+             rep("Land_closure",MaxDat.i$max[MaxDat.i$type=="Land_closure"]+1),
+             rep("Land_pConifer",MaxDat.i$max[MaxDat.i$type=="Land_pConifer"]*100+1),
+             rep("LocAge", MaxDat.i$max[MaxDat.i$type=="LocAge"]+1),        
+             rep("Loc_closure",MaxDat.i$max[MaxDat.i$type=="Loc_closure"]+1),
+             rep("Loc_pConifer", MaxDat.i$max[MaxDat.i$type=="Loc_pConifer"]*100+1)),
+
+    value = c(seq(0, MaxDat.i$max[MaxDat.i$type=="LandAge"], 1),
+              seq(0, MaxDat.i$max[MaxDat.i$type=="Land_closure"], 1),
+              seq(0.00, MaxDat.i$max[MaxDat.i$type=="Land_pConifer"], 0.01),
+              seq(0, MaxDat.i$max[MaxDat.i$type=="LocAge"], 1),
+              seq(0, MaxDat.i$max[MaxDat.i$type=="Loc_closure"], 1),
+              seq(0.00,MaxDat.i$max[MaxDat.i$type=="Loc_pConifer"],0.01)),
+       
+    BCR = bcrn.i )
+
+# Append BCR availability --------------------------------
+  BCR.i<-subset(BCRO, BCRO$BCR==bcrn.i)
+  
+# Merge to ensure complete coverage -------------------------------------
+  BCR.i <- master_template %>%
+    left_join(BCR.i, by = c("BCR","type", "value"))
+  
+# Replace NA values with zero presence -----------------------------------
+  BCR.i$Prop[is.na(BCR.i$Prop)] <- 0
+  
+#-----------------------------------------  
+# Import Species model outputs
+#---------------------------------------  
+  Output.i<-readRDS(file.path(out,"Compute Canada Code/ModelOutputs_Compiled", paste0("CompiledAgeModel_", bcrn.i,".RDS")))
+  
+  # Recover estimated mean species density -----------------------------------
+  Output.i$avDens <- with(Output.i, RMSE / PER)
+  
+  # Summaries for species model performance ---------------------------------
+  Performance <- Output.i %>%
+    group_by(species) %>%
+    summarize(
+      RMSE = round(mean(RMSE), 2),
+      PER  = round(mean(PER), 2),
+      BIAS = round(mean(BIAS), 2),
+      DENS = round(mean(avDens), 2),
+      .groups = "drop"
+    )
+  
+  # Filter species by model quality thresholds -------------------------------
+  OK_Sp <- Performance %>%
+    filter(abs(BIAS) <= 70, PER <= 20) %>%
+    pull(species)
+
+  # Prepare output table -----------------------------------------------------
+  Av.i <- Output.i %>%
+    filter(species %in% OK_Sp) %>%
+    select(1:5) %>%
+    mutate(Val = round(Val, 2))
+
+  # Remove "no value" categories - areas where co-variate values were not known
+  Av.i<-Av.i[!is.na(Av.i$Val),]
+  
+  # Now apply BCR master template ------------------------
+  master_templateSp <- expand_grid(
+    species = unique(Av.i$species), boot=c(1:32),
+    BCR.i
+  )
+  
+  # Merge to ensure complete coverage -----------------------------------------
+  AvOut <- master_templateSp %>%
+    left_join(Av.i, by = c("species", "boot","type"="Var", "value"="Val"))
+
+  # Replace missing densities with zero
+  AvOut$cdens[is.na(AvOut$cdens)] <- 0
+  
+  cat("Quantifying preference for ", length(OK_Sp),
+          " species in ", bcrn.i)
+  
+#########################################################
+# Smooth use and availability across each value range
+#########################################################
+
+  # Order (descending) for moving averages --
+  AvOut <- arrange(AvOut, desc(species),desc(boot),desc(type),desc(value))
+  
+  ### Smooth all values over range using a moving 5-year window ------
+  ### & Extract mid-point of population accumulation curve ----
+  print("Smoothing distributions...")
+  Varlist<-c(unique(AvOut$type))
+  Spplist<-c(unique(AvOut$species))
+  
+  p<-0 #index
+  stack<-list()
+
+# run through each species, variable and boot and produce a moving average
+##OK_Sp<-c("REVI","RCKI")
+  for (sp in Spplist){ #species
+    for (v in Varlist){ # Var
+      for (b in 1:32){ #boot
+        
+        p<-p+1 # update index
+        gr <- filter(AvOut, species == sp, type == v, boot == b)
+        l<-nrow(gr)
+        
+          ssdens<- zoo::rollmean(c(rep(gr$cdens[1],2),gr$cdens,rep(gr$cdens[l],2)),5,align="center", na.rm=T)
+          sbdens<- zoo::rollmean(c(rep(gr$Prop[1],2),gr$Prop,rep(gr$Prop[l],2)),5,align="center", na.rm=T)
+          
+          # Avoid extremely small values
+          ssdens <- ifelse(ssdens < 1e-9, 0, ssdens)
+          sbdens <- ifelse(sbdens < 1e-9, 0, sbdens)
+
+          # Get the mid-point of the population accumulation...
+          sset<-ssdens%>%cumsum()
+          index_at_50_percent <- which(sset >= 0.5*max(sset))[1]
+          PopCumMid<-gr%>%.[index_at_50_percent,]%>%pull(value)
+          
+          gr <- gr %>%
+            mutate(ssdens = ssdens,
+                   sbdens = sbdens,
+                   PopCumMid = PopCumMid)
+          
+        stack[[p]]<-gr
+        } #boot
+      } #Var
+    message("Processed species ", sp)} #species
+
+  BCR_Rat<-do.call(rbind, stack)
+  print(paste("finished smooth", bcrn.i))
+
+# Re-standardize smoothed data ---------------------------
+  stdzd <- BCR_Rat %>%
+    group_by(species, type, boot) %>%
+    summarise(sumBCR = sum(sbdens, na.rm = TRUE),
+              sumSpp = sum(ssdens, na.rm = TRUE),
+              .groups = "drop")
+
+  BCR_Rat <- merge(BCR_Rat, stdzd, by = c("species", "type", "boot"))
+  
+  BCR_Rat <- BCR_Rat %>%
+    mutate(ssdens = ssdens / sumSpp,
+           sbdens = sbdens / sumBCR)
+
+  BCR_Rat$srat = BCR_Rat$ssdens / BCR_Rat$sbdens #ratio of smoothed vals
+
+saveRDS(BCR_Rat, paste0("SmoothedRatios_SCANFI2",bcrn.i,".RDS"))
+}
+
+require(ggplot2)
+ggplot(aes(y=srat,x=value,col=species), dat=BCR_Rat[c(1:100000),]) + geom_smooth()+ facet_wrap(~type, scales = "free")
+# Save out smoothed ratios ---# Save out smoothed ratios --type.convert()-
+
+
+############## End of Code #########################################
