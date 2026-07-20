@@ -195,9 +195,7 @@ for (i in c(1:length(bcrn))){
 saveRDS(BCR_Rat, paste0("SmoothedRatios_SCANFI2",bcrn.i,".RDS"))
 }
 
-require(ggplot2)
-ggplot(aes(y=srat,x=value,col=species), dat=BCR_Rat[c(1:100000),]) + geom_smooth()+ facet_wrap(~type, scales = "free")
-# Save out smoothed ratios ---# Save out smoothed ratios --type.convert()-
-
+#require(ggplot2)
+#ggplot(aes(y=srat,x=value,col=species), dat=BCR_Rat[c(1:100000),]) + geom_smooth()+ facet_wrap(~type, scales = "free")
 
 ############## End of Code #########################################
