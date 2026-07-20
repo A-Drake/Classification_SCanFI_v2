@@ -1,0 +1,218 @@
+#################################################
+# Species Classification V5 - SCANFI age
+# G. Compare landscape vs local only model
+# Anna Drake
+# May 26, 2026
+################################################
+
+require(gbm)
+require(dplyr)
+require(tidyr)
+require(hydroGOF)
+
+# 1. HPC Setup & Args ----
+args <- commandArgs(trailingOnly = TRUE)
+task_id <- as.numeric(args[1]) 
+
+#Test code ---
+#root <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data"
+
+# Define Paths (Use environment variables or scratch space)
+# On HPC, always use $SCRATCH for high-speed I/O
+root <- "./data" 
+out <- "./Comparison_results"
+dir.create(out, showWarnings = FALSE)
+
+#---------------------
+# Functions 
+#---------------------
+
+`%notin%` <- Negate(`%in%`)
+
+#  Deviance function: Mean Poisson Deviance --------------
+poisson_deviance <- function(y, lambda) {
+  # Small constant to prevent log(0) issues if lambda is exactly 0
+  lambda <- pmax(lambda, 1e-10) 
+  2 * mean(ifelse(y > 0, y * log(y / lambda), 0) - (y - lambda))
+}
+
+
+#------------------------------
+# Import job list 
+#-------------------------------
+Tune_bcr_Species<-read.csv(file.path(root, "ModelCompareJobs.csv")) # this comes from the CombineModelOutputs.R file which IDs missing boots
+
+# Get tasks -----
+all_tasks <- Tune_bcr_Species %>% arrange(bcr, spp)
+current_task <- all_tasks[task_id, ]
+
+# Extract particular task ----
+spp.i  <- current_task$spp
+bcrn.i <- current_task$bcr
+lr.i   <- current_task$lr
+trees.i <- current_task$trees
+
+# Load prediction co-variates ----
+Covar <- read.csv(file.path(root, "ClassificationCovariates.csv")) %>%
+  mutate(across(c(LocAge, LandAge), as.numeric)) %>%
+  select(id, Loc_pConifer, Land_pConifer,Loc_closure, Land_closure, LocAge, LandAge)
+
+# Load survey and count data ------------
+load(file.path(root, "04_NM5.0_data_stratify.Rdata"))
+rm('cov')
+
+# Pre-calculate common data outside the boot loop -------
+all_ids_in_bcr <- bcrlist[bcrlist[, bcrn.i] > 0, "id"]%>%as.numeric()
+
+# set up BCR dataset -----
+master_bcr_data <- Covar %>% 
+  dplyr::filter(id %in% all_ids_in_bcr) %>%
+  inner_join(select(visit, id, year, method), by = "id") %>%
+  mutate(
+    method = case_match(method, "PC" ~ 0, "eBird" ~ 1, .default = 2),
+    count  = as.numeric(bird[as.character(id), spp.i]),
+    off    = offsets[match(id, offsets$id), spp.i]
+  ) %>%
+  relocate(count) %>%
+  filter(!is.na(count))
+
+
+###################################################
+# Run species x bcr
+###################################################
+
+message(paste("Processing:", spp.i, "in BCR:", bcrn.i))
+
+
+# Output frame -----
+performance_metrics <- list()
+
+# Run bootstraps ---
+for (j in c(1:32)) {  #note change here
+  set.seed(j)
+  
+  # Training/Testing Split
+  train_ids <- as.numeric(unlist(bootlist[2 + j]))
+  
+  # Training data ----------
+  dat.i <- master_bcr_data %>% filter(id %in% train_ids)
+  
+  # Safe out-of-sample size and extraction ----
+  pot_test_ids <- master_bcr_data %>% filter(id %notin% train_ids)
+  test_sample_size <- min(500, nrow(pot_test_ids))
+  
+  if(test_sample_size == 0) next # Skip if no validation data available
+  
+  dat.t <- pot_test_ids %>% dplyr::slice_sample(n = test_sample_size)
+  
+  # Get the average count in the dataset
+  mean_count <- mean(c(dat.t$count, dat.i$count), na.rm = TRUE)
+  
+  # 4. Model Fit ----
+  # Full
+  mfull <- try(gbm::gbm(count ~ . - id - off + offset(off),
+                        data = dat.i,
+                        n.trees = trees.i,
+                        interaction.depth = 3,
+                        shrinkage = lr.i,
+                        distribution = "poisson",
+                        keep.data = FALSE,
+                        n.cores = 1), silent = TRUE)
+  #Reduced
+  mred <- try(gbm::gbm(count ~ . - id - off - LandAge - Land_pConifer - Land_closure + offset(off),
+                        data = dat.i,
+                        n.trees = trees.i,
+                        interaction.depth = 3,
+                        shrinkage = lr.i,
+                        distribution = "poisson",
+                        keep.data = FALSE,
+                        n.cores = 1), silent = TRUE)
+  
+# Check if both models successfully trained
+  if (!inherits(mfull, "try-error") && !inherits(mred, "try-error")) {
+  
+# Predict Values ----
+pred_link_full <- predict(mfull, dat.t, n.trees = trees.i, type = "link")
+pred_link_red  <- predict(mred, dat.t, n.trees = trees.i, type = "link")
+
+# Change to count for poisson deviance
+Full_count_val <- exp(pred_link_full + dat.t$off)
+Red_count_val  <- exp(pred_link_red + dat.t$off)
+  
+# Actual values --------------
+Act_count_val  <- dat.t$count                          # = Observed Count
+
+# Assess performance ---------------------------
+  dev_full <- poisson_deviance(Act_count_val, Full_count_val)
+  dev_red  <- poisson_deviance(Act_count_val, Red_count_val)
+  rmse_full <-rmse(Act_count_val, Full_count_val, na.rm = TRUE)
+  rmse_red <- rmse(Act_count_val, Red_count_val, na.rm = TRUE)
+  BIAS_full <-pbias(Act_count_val, Full_count_val, na.rm = TRUE)
+  BIAS_red <- pbias(Act_count_val, Red_count_val, na.rm = TRUE)
+
+# Put in list -----------------  
+  performance_metrics[[j]]<-data.frame(
+    dev_full = dev_full,
+    dev_red  = dev_red,
+    rmse_full = rmse_full,
+    rmse_red  = rmse_red,
+    PER_full  =rmse_full/mean_count, # standardized RMSE error for each boot
+    PER_red   =rmse_red/mean_count,
+    BIAS_full = BIAS_full,
+    BIAS_red  = BIAS_red
+  )
+  print(j)
+  }} # end of if statement and end of boots
+
+# Assemble boots ----------
+perf<-do.call(rbind,performance_metrics)
+n_successful_runs <- nrow(perf)
+
+# Get grouped statistics
+if (n_successful_runs > 1) {
+
+# Calculate (reduced-full) model performance: if (+) full model is better
+perf$DEVdiff<-perf$dev_red-perf$dev_full
+perf$RMSEdiff<-perf$rmse_red-perf$rmse_full
+
+# Do a t-test on the Deviance difference
+m_Ddiff <- mean(perf$DEVdiff)
+se_Ddiff   <- sd(perf$DEVdiff) / sqrt(n_successful_runs)
+
+# Do a t-test on the RMSE difference
+m_RMdiff <- mean(perf$RMSEdiff)
+se_RMdiff   <- sd(perf$RMSEdiff) / sqrt(n_successful_runs)
+
+# t-critical value for df = 31 at 95% confidence (~2.04)
+t_crit <- qt(0.975, df = n_successful_runs- 1)
+
+l95_Dev_t <- m_Ddiff - (t_crit * se_Ddiff)
+u95_Dev_t <- m_Ddiff + (t_crit * se_Ddiff)
+                      
+l95_RMSE_t <- m_RMdiff - (t_crit * se_RMdiff)
+u95_RMSE_t <- m_RMdiff + (t_crit * se_RMdiff)
+                      
+
+# Summarize and export file ----------------------
+outputs<-data.frame(species=spp.i,
+                    BCR=bcrn.i,
+                    Full_Dev=round(mean(perf$dev_full),4),
+                    Red_Dev=round(mean(perf$dev_red),4),
+                    Full_RMSE=round(mean(perf$rmse_full),4),
+                    Red_RMSE=round(mean(perf$rmse_red),4),
+                    Full_PER = round(mean(perf$PER_full), 4),
+                    Red_PER = round(mean(perf$PER_red), 4),
+                    Full_BIAS = round(mean(perf$BIAS_full),4),
+                    Red_BIAS =round(mean(perf$BIAS_red),4),
+                    Dev_Diff=round(m_Ddiff, 4),
+                    u95_DevDiff=round(u95_Dev_t, 4),
+                    l95_DevDiff=round(l95_Dev_t, 4),
+                    RMSE_Diff=round(m_RMdiff, 4),
+                    u95_RMSEDiff=round(u95_RMSE_t, 4),
+                    l95_RMSEDiff=round(l95_RMSE_t, 4))
+                    
+#Write out
+write.csv(outputs,file.path(out,paste0("FullvReduced_",spp.i,"_",bcrn.i,".csv")))
+
+} #end conditional 
+################ End of Models ##############
