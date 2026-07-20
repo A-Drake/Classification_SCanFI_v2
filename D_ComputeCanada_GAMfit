@@ -148,7 +148,8 @@ fitsim$type<-type.i
 
 # SAVE RESULT ---
 saveRDS(fitsim, file.path(out,paste0("GAM_", bcr.i, "_", spp.i, "_", type.i, ".RDS")))
-#######################################################################
+
+############################## END OF CODE #########################################
 
 # SH file ------
 #!/bin/bash
