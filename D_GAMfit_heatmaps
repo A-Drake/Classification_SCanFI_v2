@@ -1,0 +1,442 @@
+######################################
+# Part II -  Plotting Preference out ----
+# Anna Drake
+# May 12, 2026
+#########################################
+
+library(dplyr)      
+library(data.table) 
+library(ggplot2)    
+library(ggtext)     # For element_markdown() 
+library(tidytext)   
+library(tidyverse)
+require(scico)
+
+`%notin%` <- Negate(`%in%`)
+
+# Set up path for data ----
+root <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/GAMOutputs_Compiled"
+out<- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/Plots"
+setwd(out)
+
+# BCR name lookup ----
+bcrlookup<-data.frame(name=c("Northern Pacific Rainforest (BCR 5.0)","Great Basin (BCR 9.0)","Northern Rockies (BCR 10)",
+                             "Boreal Hardwood Transition (BCR 12)","Lower Great Lakes/St. Lawrence Plain (BCR 13)",
+                             "Atlantic Northern Forests (BCR 14)",
+                             "Northern Interior Forest - Boreal Cordillera (BCR 4.0)",
+                             "Northern Interior Forest - Taiga Cordillera (BCR 4.1)",
+                             "Northern Interior Forest - Brooks Range (BCR 4.2)",
+                             "Taiga Plains (BCR 6.0)","Boreal Plains (BCR 6.1)","Taiga Shield West (BCR 7.0)",
+                             "Hudson Plains (BCR 7.1)","Taiga Shield East (BCR 7.2)","Boreal Softwood Shield West (BCR 8.0)",
+                             "Boreal Softwood Shield East (BCR 8.1)","Boreal Softwood Shield - Newfoundland (BCR 8.2)"), 
+                      num=c("can5","can9" ,"can10","can12","can13","can14",
+                            "can40","can41","can42","can60","can61","can70","can71",
+                            "can72","can80","can81","can82"))
+
+# Forest bird categories - State of the Birds ###
+# Define non-forest species
+nonforest<-c("AMCR","AMGO","AMPI","ATSP","BAOR","BANS","BARS","BEKI","BBMA","BLJA",
+             "BGGN","BOBO","BRBL","BRTH","BHCO","CHSP","CCSP","CLSW","COGR","COYE","EABL","EAKI","EAPH","EATO","EUST","FISP","FOSP",
+             "GCSP","GWWA","GRSP","GRCA","GRYE","HOLA","HOSP","HOWR","INBU","KILL","LALO","LCSP","LEYE","LISP","MAWR","MOBL","MODO","NESP",
+             "NOCA","PAWA","RWBL","ROPI","RUBL","SAVS","SEWR","SOSA","SOSP","SPSA","SWSP","TRES","UPSA","VESP","WCSP","WIPT","WISN",
+             "WIWA","YHBL","ALFL","AMRO","BBCU","YEWA","CORA","NOFL","CEDW","YBCU","WITU") #added YBCU and WITU to this list
+#retain ALFL?
+wetland<-c("ALFL","COYE","WISN","SPSA","NESP","MAWR","YHBL","RWBL","SEWR","SWSP","BEKI","SOSA","GRYE","KILL","LEYE","UPSA","RUBL","DUNL")
+grassland<-c("BOBO","GRSP","HOLA","LCSP","SAVS","UPSA","VESP")
+
+irruptive<-c("WWCR","RECR","PISI","EVGR","RBGR","PIGR") # irruptive
+anthr<-c("HOSP","ROPI","EUST")  # anthropological expansion spp
+open<-c("WIPT","ROPT","WIPT","RKPT","SNOW","BLUE","NOWH","EYWG","HASP","LALO","SMLO","SNBU","PEFA","AMPI")  # adding AMPI, removing CHCH, HORE and CORE  #arctic open land species
+
+# 2. Bring in materials ---
+bcrs<-c("can40","can41","can5","can10","can9","can60","can70","can80","can61",
+"can71","can72","can81","can82","can12","can13","can14")
+
+################################################################
+# **Remove post-hoc IDed species-BCRs with bad model performance
+################################################################
+
+PosthocID<-c("BOWA_can5","BTBW_can80","MAWA_can40","WBNU_can81","WWCR_can5","YBCU_can13")
+
+# Remove the bad LR species
+ExcludeLR<-read.csv("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data/SpeciesBCRs_toexclude.csv")
+ExcludeLR$sppBCR<-paste(ExcludeLR$spp,ExcludeLR$BCR,sep="_")
+
+Remove<-ExcludeLR$sppBCR
+#######################################
+# ID where regional values are important
+###########################################
+
+FullvReduced<-read.csv("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/Summaries/FullvsReducedModelSummary.csv")
+Full<-FullvReduced%>%filter(Devdecision=="Regional values important"|RMSEdecision=="Regional values important")
+Fullspp<-paste(Full$species,Full$BCR,sep="_")
+
+########################################
+# Import data and set up for plots ----
+#########################################
+
+for (i in c(1:16)){
+
+bcrn.i<-bcrs[i]
+name<-bcrlookup%>%filter(num==bcrn.i)%>%pull(name)
+
+PlotStat<-readRDS(file.path(root,paste0("Compiled_GAMOuptuts_",bcrn.i,".RDS")))
+cat("Importing models for ", bcrn.i)
+
+# Average GAM-modeled preference strength over bootstraps divided by number of Values ---
+total<-PlotStat%>%group_by(species,type,BCR)%>%summarize(totav=round(sum(abs(fit), na.rm=T)/length(type),2),
+                                                      .groups = "drop")
+
+# For methods?
+sumstat<-total%>%group_by(type)%>%summarize(mean=mean(totav, na.rm=T))
+
+write.csv(total,paste0("GAM_SelectionStrength_",bcrn.i,".csv"))
+
+# Get out the multiboot GAM fit and CI ----
+BGAMp<-merge(PlotStat,total,by=c("species","type","BCR"))
+
+# ------------------------------------------------------------
+# Assign preference threshold - point wise CI
+# ------------------------------------------------------------
+
+BGAMp <- BGAMp %>%
+  mutate(
+    Pref = case_when(
+      l95_pw > 0 ~ "P95",
+      u95_pw < 0 ~ "A95",
+      l90_pw > 0 ~ "P90",
+      u90_pw < 0 ~ "A90",
+      l75_pw > 0 ~ "P75",
+      u75_pw < 0 ~ "A75",
+      TRUE               ~ "neutral"
+    )
+  )
+
+
+# Now strength of preference for each species -----
+
+Select<-BGAMp%>% group_by(species, type, BCR) %>% 
+  summarize(low=quantile(fit,p=0.25, na.rm=T),
+            c_50=quantile(fit,p=0.50, na.rm=T),
+            c_25=quantile(fit,p=0.75, na.rm=T), 
+            c_12=quantile(fit,p=0.875, na.rm=T), 
+            c_peak=quantile(fit,p=0.95, na.rm=T), 
+            .groups = "drop")
+
+BGAMp<-merge(BGAMp, Select, by=c("species","type","BCR"))
+
+BGAMp <- BGAMp %>%
+  mutate(
+    # ------------------------------------------------------------
+    # 1. Initial rank based on estimate quantiles
+    # ------------------------------------------------------------
+    rank = case_when(
+      fit <= low ~ "lower 25%",
+      fit > low   &  fit < c_50 ~ "lower 50%",
+      fit >= c_50 &  fit < c_25 ~ "upper 50%",
+      fit >= c_25 &  fit < c_12 ~ "upper 25%",
+      fit >= c_12 &  fit < c_peak ~ "upper 12.5%",
+      fit >= c_peak ~ "peak preference"
+    ),
+    
+    
+    # ------------------------------------------------------------
+    # 2. Apply reporting limits based on 75% CI classification - can toggle to 90CI later
+    # ------------------------------------------------------------
+    rankCI = case_when(
+      
+      # Neutral regardless of rank
+      Pref =="neutral" ~ "neutral",
+      
+      # Avoidance categories (A95, A90)
+      Pref %in% c("A95","A90","A75") & rank == "lower 25%" ~ "avoids (bottom 25%)",
+      Pref %in% c("A95","A90","A75") & rank != "lower 25%" ~ "avoids",
+      
+      # Preference
+      Pref %in% c("P95","P90","P75") & rank == "lower 25%" ~ "lower 50%",
+      
+      # Otherwise default to the previously assigned rank
+      TRUE ~ rank
+    )
+  )
+
+# -----------------------------------
+# Extract alpha as a numeric 
+# -----------------------------------
+BGAMp <- BGAMp %>%
+  mutate(
+    # Extract characters 2–4 from Pref
+    alpha = substr(Pref, 2, 4),
+    
+    # Convert "eut" to 0, keep everything else as is
+    alpha = case_when(
+      alpha == "eut" ~ "0",
+      TRUE           ~ alpha
+    )
+  )
+
+#Toggle on = 90% CI vs base 75% CI - when switching, remember to toggle plot label
+BGAMp$rankCI <-ifelse(BGAMp$alpha<90,"neutral",as.character(BGAMp$rankCI))
+
+# ------------------------------------------------------------
+# Mid-values for peak use (upper 12.5% + peak preference)
+# ------------------------------------------------------------
+Peak <- BGAMp[,c("species","BCR","type","value","rankCI")] %>% 
+  unique() %>%
+  filter(rankCI %in% c("peak preference", "upper 12.5%")) %>%
+  group_by(species, type, BCR) %>%
+  summarize(peak = quantile(value, 0.5, na.rm = TRUE), .groups = "drop")
+
+# Mid-values for avoidance (bottom 25%)
+#Avoid <- BGAMp %>%
+#  filter(rankCI == "avoids (bottom 25%)") %>%
+#  group_by(species, type, BCR) %>%
+#  summarize(trough = quantile(value, 0.5, na.rm = TRUE), .groups = "drop")
+
+# Merge results back into BGAMp ----
+BGAMp <- BGAMp %>%
+  left_join(Peak,  by = c("species", "type","BCR"))
+#  left_join(Avoid, by = c("species", "type","BCR"))
+
+BGAMp <- BGAMp %>%
+  mutate(peakorder = ifelse(is.na(peak),0, peak+2)) #move species with no peak down
+
+print("preference labelled....")  
+
+#-----------------------------------
+# Filter species ----- using wetland and shorebird class from State of Birds + grassland + RUBL which I would consider wetland assoc but isn't listed as =
+# ----------------------------------
+Plot<-BGAMp%>% 
+    filter(species %notin% c(wetland,grassland,open))
+
+# Add a flag column for weak selection (<10% per unit?) 
+Weakselection <- Plot %>%
+    filter(totav <= 0.1) %>% 
+    select(species, type) %>%
+    distinct() %>%
+    mutate(Weakselect = TRUE)
+
+
+###############################
+# Format Y-axis labels
+###############################
+
+#ID species with weak selection
+Plot <- Plot %>%
+    left_join(Weakselection, by = c("species", "type")) 
+
+Plot$Label<-paste(Plot$species,Plot$BCR,sep="_")
+  
+Plot$specieslab<-ifelse(is.na(Plot$Weakselect), Plot$species, paste0("*",Plot$species,"*"))
+
+# Bold species that are considered non-forest in State of Birds ------------
+Plot$specieslab<-ifelse(Plot$species %in% nonforest, paste0("**",Plot$specieslab,"**"),Plot$specieslab)
+
+# Add the S value with 2 digits ---------
+Plot$specieslab<-paste0(Plot$specieslab," (",sprintf("%.2f", Plot$totav),")")
+
+# Add mark
+Plot$specieslab<-ifelse(Plot$Label %in% Fullspp & Plot$type %in% c("LandAge","Land_closure", "Land_pConifer"), paste0(Plot$specieslab,"*"),paste0(Plot$specieslab,"<span style='color:transparent;'>*</span>"))
+
+# Order levels ---
+Plot$rankCI <- factor(Plot$rankCI, levels = c("peak preference","upper 12.5%","upper 25%","upper 50%", "lower 50%","neutral","avoids","avoids (bottom 25%)","NA" )) 
+  
+####################################
+# Remove the posthoc IDed spp
+###################################  
+  
+Plot$Label<-paste(Plot$species,Plot$BCR,sep="_")
+Plot<-subset(Plot,Plot$Label %notin% c(PosthocID,Remove))
+
+  
+print("Done data formatting - now plot out....")
+
+
+# General formatting for plots ---
+    
+facet_title<-c(LocAge="Local Forest \n Age (yrs)", LandAge="Regional Forest \n Age (yrs)",Loc_pConifer="Local Proportion \n Conifer",Loc_closure="Local Forest Cover (%)", Land_pConifer="Regional Proportion \n Conifer",Land_closure="Regional Forest Cover (%)")
+pal=c("#2C194C" ,"#294A7C" ,"#5A81A8", "#A3BACF", "#EAEDEB","white", "#D3D3A8", "#9A9A61")
+
+###############################
+#I. Forest Age plot  ----------
+###############################
+
+
+# Subset to forest birds only
+Forplot<-subset(Plot,Plot$species %notin% nonforest)
+
+lines_set1 <- data.frame(
+      type = c(rep("LocAge",3),rep("LandAge",3)),
+      vals = rep(c(40, 80, 150),2)) %>%
+  mutate(type = factor(type, levels = c("LocAge", "LandAge")))
+
+lines_set2 <- data.frame(
+      type = rep(c("Land_pConifer", "Loc_pConifer"),2),
+      vals = c(0.25,0.25,0.75,0.75)) %>%
+  mutate(type = factor(type, levels = c("Loc_pConifer", "Land_pConifer")))
+
+    
+# Set a shared maximum age
+    Max<-subset(Forplot,Forplot$type %in% c("LocAge","LandAge"))%>%pull(value)%>%max()
+
+# Dynamic formatting
+    num_spp <- length(unique(Forplot$species))
+    height <- (num_spp * 0.25) + 3  # Adding 3 inches for headers/footers
+    text_multiplier <- ifelse(num_spp < 45, 1.2, 
+                              ifelse(num_spp < 70, 1.0, 0.8))
+    plot_res <- ifelse(num_spp > 70, 400, 300)    
+    
+    
+ png(paste0("GAM_AgePreference90CI",bcrn.i,".png"), width=16,height=height, units = "in", res = plot_res)
+# png(paste0("GAMPreference75CI",bcrn.i,".png"), width=15,height=height, units = "in",res = 500)
+    
+Forplot1<-Forplot %>% 
+  filter(type %in% c("LocAge","LandAge")) %>% 
+  mutate(type = factor(type, levels = c("LocAge", "LandAge")))%>%  # Pre-calculate the tidytext reordering so ggplot doesn't scramble it
+  mutate(y_reordered = reorder_within(as.factor(specieslab), peakorder, type)) %>%
+  arrange(type) 
+
+
+plt1<-Forplot1 %>%
+      ggplot(aes(value,y=y_reordered,  #can also use just the upper 5% (dualorder val) 
+                 fill=as.factor(rankCI))) +
+  geom_raster() +
+  scale_y_reordered(expand = expansion(mult = c(0,0)))+
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05)),limits=c(-5,Max+5)) +
+  scale_fill_manual(values = pal, na.value = "transparent") +
+  labs(x = "", y = "", title = name) +
+
+#Add value cut lines ----
+    geom_vline(data = lines_set1, aes(xintercept = vals), col = "red") +
+  
+# Split and order plot ---------------
+    facet_wrap(~type, scales="free", labeller=as_labeller(facet_title)) +
+      theme(
+        legend.title = element_blank(),  
+        legend.text  = element_text(size = 22 * text_multiplier), 
+        legend.key.size = unit(1.2 * text_multiplier, "cm"),
+        
+        # CRITICAL: Y-axis text scales down as species list grows
+        axis.text.y = element_markdown(vjust = 0.5, size = 15 * text_multiplier), 
+        
+        axis.text.x = element_text(size = 14), 
+        plot.title  = element_text(size = 24, face = "bold"), 
+        strip.text  = element_text(size = 22 * text_multiplier)
+      )
+
+print(plt1)
+dev.off()
+print("done age plot")
+gc()
+
+################################
+# II. Proportion Conifer
+################################
+png(paste0("GAM_ConiferPreference90CI",bcrn.i,".png"), width=16,height=height, units = "in", res = plot_res)
+# png(paste0("GAMPreference75CI",bcrn.i,".png"), width=15,height=height, units = "in",res = 500)
+
+Forplot2<-Forplot%>% filter(type %in% c("Loc_pConifer","Land_pConifer")) %>%
+  mutate(type = factor(type, levels = c("Loc_pConifer", "Land_pConifer")))%>%
+  mutate(y_reordered = reorder_within(as.factor(specieslab), peakorder, type)) %>%
+  arrange(type) #order levels
+  
+  plt2<-Forplot2 %>%
+      ggplot(aes(value,y=y_reordered,  #can also use just the upper 5% (dualorder val) 
+                 fill=as.factor(rankCI))) +
+      geom_raster() +
+      scale_y_reordered(expand = expansion(mult = c(0, 0.0)))+
+      scale_x_continuous(expand = expansion(mult = c(0, 0.05)),limits=c(-0.05,1.05)) +
+      scale_fill_manual(values = pal, na.value = "transparent") +
+      labs(x = "", y = "", title = name) +
+      
+    #Add value cut lines ----
+    geom_vline(data = lines_set2, aes(xintercept = vals), col = "red") +  
+      
+    # Split and order plot ---------------
+  facet_wrap(~type, scales="free", labeller=as_labeller(facet_title)) +
+    theme(
+      legend.title = element_blank(),  
+      legend.text  = element_text(size = 22 * text_multiplier), 
+      legend.key.size = unit(1.2 * text_multiplier, "cm"),
+      
+      # CRITICAL: Y-axis text scales down as species list grows
+      axis.text.y = element_markdown(vjust = 0.5, size = 15 * text_multiplier), 
+      
+      axis.text.x = element_text(size = 14), 
+      plot.title  = element_text(size = 24, face = "bold"), 
+      strip.text  = element_text(size = 22 * text_multiplier)
+    )
+  
+    
+    print(plt2)
+    dev.off()
+    print("done conifer plot")
+    gc()
+
+###############################
+# III. Forest % cover
+###############################
+# For Methods -------------
+print(paste(bcrn.i, " has ", length(unique(Plot$species)), " species"))
+facet_title<-c(Loc_closure="Local \n Forest Cover (%)", Land_closure="Regional \n Forest Cover (%)")
+
+# Dynamic formatting ---------------
+num_spp <- length(unique(Plot$species))
+height <- (num_spp * 0.25) + 3  # Adding 3 inches for headers/footers
+text_multiplier <- ifelse(num_spp < 45, 1.2, 
+                          ifelse(num_spp < 70, 1.0, 0.8))
+plot_res <- ifelse(num_spp > 70, 400, 300)    
+
+# toggle appropriate plot name ----
+    #png(paste0("ForestCover_Pref75CI",bcrn.i,".png"), width=20,height=height, units = "in",res = 500)
+    png(paste0("ForestCover_Pref90CI",bcrn.i,".png"), width=16,height=height, units = "in", res = plot_res)
+    
+    plot_data <- Plot %>% 
+      filter(type %in% c("Loc_closure", "Land_closure")) %>% 
+      mutate(type = factor(type, levels = c("Loc_closure", "Land_closure"))) %>% 
+      mutate(y_reordered = reorder_within(as.factor(specieslab), peakorder, type)) %>%
+      arrange(type)   
+    
+    plt<-plot_data %>%
+      ggplot(aes(value,y=y_reordered, 
+                 fill=as.factor(rankCI))) +
+      geom_raster() +
+      scale_y_reordered(
+          expand = expansion(mult = c(0, 0.0)),
+          labels = function(x) {
+            cleaned <- tidytext::reorder_func(x)
+            # 2. Return the clean text strings to element_markdown()
+            return(cleaned)
+        }
+      )+
+      scale_x_continuous(expand = expansion(mult = c(0, 0.05)),limits = c(-5, 100)) +
+      scale_fill_manual(values = pal, na.value = "transparent") +
+      labs(x = "", y = "", title = name) +
+      
+      #Add value cut lines ----
+    geom_vline(xintercept = c(25,50,75), col = "red") +
+      
+      # Split and order plot ---------------
+    facet_wrap(~type, scales="free", labeller=as_labeller(facet_title)) +
+      theme(
+        legend.title = element_blank(),  
+        legend.text  = element_text(size = 22 * text_multiplier), 
+        legend.key.size = unit(1.2 * text_multiplier, "cm"),
+        
+        # CRITICAL: Y-axis text scales down as species list grows
+        axis.text.y = element_markdown(vjust = 0.5, size = 15 * text_multiplier), 
+        
+        axis.text.x = element_text(size = 14), 
+        plot.title  = element_text(size = 24, face = "bold"), 
+        strip.text  = element_text(size = 22 * text_multiplier)
+      )
+    
+    print(plt)
+    
+    dev.off()
+    print("done forest cover plot")
+    gc()
+}
+
+########## END OF CODE #########
+
