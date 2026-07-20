@@ -9,16 +9,16 @@ library(dplyr)
 library(tidyr)
 
 
-# Get command line arguments (Task ID from Slurm)
+# Get command line arguments (Task ID from Slurm) ----------------------
 args <- commandArgs(trailingOnly = TRUE)
 task_id <- as.numeric(args[1]) 
 
-# Define Paths 
+# Define Paths  ------------------------
 root <- "./data" 
 out <- "./results"
 dir.create(out, showWarnings = FALSE)
 
-# 1. Load Static Data once
+# 1. Load Static Data once ----------------------
 bcr_Species <- read.csv(file.path(root,"BCR_Species_iter2.csv"))
 Covar <- read.csv(file.path(root,"ClassificationCovariates.csv")) %>%
   mutate(LocAge = as.numeric(LocAge), LandAge = as.numeric(LandAge)) %>%
@@ -26,7 +26,7 @@ Covar <- read.csv(file.path(root,"ClassificationCovariates.csv")) %>%
 
 load(file.path(root, "04_NM5.0_data_stratify.Rdata"))
 
-# 2. Determine which BCR/Species this specific task handles
+# 2. Determine which BCR/Species this specific task handles ---------------------
 # This logic maps the Slurm Task ID to a specific Species-BCR combination
 all_tasks <- bcr_Species %>%
   arrange(BCR, species)
@@ -37,7 +37,7 @@ bcrn.i <- current_task$BCR
 
 message(paste("Processing:", spp.i, "in BCR:", bcrn.i))
 
-# 3. Data Prep for this specific task
+# 3. Data Prep for this specific task ------------------
 visit.i <- bcrlist[bcrlist[,bcrn.i] > 0, c("id", bcrn.i)] %>%
   filter(id %in% bootlist$b1)
 
@@ -55,13 +55,13 @@ dat.i <- visit.i %>%
 
 off.i <- offsets[match(dat.i$id, offsets$id), spp.i]
 
-# 4. GBM Optimization Loop
+# 4. GBM Optimization Loop --------------------
 lr.i <- 0.001
 lr.min <- 1e-10
 lr.max <- 0.5
 trees.i <- 0
 
-# Function for the GBM step to keep code DRY
+# Function for the GBM step ---------------
 run_gbm <- function(lr) {
   try(dismo::gbm.step(
     data = as.data.frame(dat.i),
@@ -79,7 +79,7 @@ run_gbm <- function(lr) {
 m.i <- run_gbm(lr.i)
 trees.i <- if(inherits(m.i, "try-error") || is.null(m.i)) 0 else m.i$n.trees
 
-# Learning Rate adjustment loop
+# Learning Rate adjustment loop -----------------
 while((trees.i < 1000 && lr.i >= lr.min) || (trees.i == 10000 && lr.i <= lr.max)){
   if(trees.i < 1000) { lr.i <- lr.i / 10 }
   if(trees.i == 10000 && lr.i < 0.1) { lr.i <- lr.i * 5 }
@@ -89,7 +89,7 @@ while((trees.i < 1000 && lr.i >= lr.min) || (trees.i == 10000 && lr.i <= lr.max)
   trees.i <- if(inherits(m.i, "try-error") || is.null(m.i)) 0 else m.i$n.trees
 }
 
-# 5. Save Output
+# 5. Save Output -----------------------
 res <- data.frame(trees=trees.i, lr=lr.i, spp=spp.i, bcr=bcrn.i)
 write.csv(res, file.path(out, paste0("LR_", bcrn.i, "_", spp.i, ".csv")), row.names = FALSE)
 
