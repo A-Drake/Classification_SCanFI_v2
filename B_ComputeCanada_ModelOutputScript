@@ -16,11 +16,7 @@ require(hydroGOF)
 args <- commandArgs(trailingOnly = TRUE)
 task_id <- as.numeric(args[1]) 
 
-#Test code ---
-#root <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data"
-
-# Define Paths (Use environment variables or scratch space)
-# On HPC, always use $SCRATCH for high-speed I/O
+# Define Paths 
 root <- "./data" 
 out <- "./Classification_results"
 dir.create(out, showWarnings = FALSE)
@@ -48,19 +44,18 @@ bcr.i <- read_sf(file.path(root, "BCR_shapefile.shp")) %>%
   mutate(subUnit = paste0("can", subUnit)) %>%
   filter(subUnit == bcrn.i)
 
-# Use SpatRaster options for speed
-
+# Use SpatRaster options ----------
 pred  <- rast(file.path(root, "predictionlayer2025.tif"))
 Lakes <- rast(file.path(root, "Lakesmask.tif"))%>%crop(.,pred)
 
 pred<-pred %>% 
   mask(Lakes, inverse = TRUE)
 
-#Clean up the predpred#Clean up the prediction raster to the appropriate values for pooling - 2 digits for conifer, 0 for others
+# Clean up the prediction raster to the appropriate values for pooling - 2 digits for conifer, 0 for others --------------
 pred[[3:6]]<-round(pred[[3:6]],digits=0) # 
 pred[[1:2]]<-round(pred[[1:2]],digits=2)
 
-# Crop/Mask immediately to minimize memory footprint
+# Crop/Mask immediately to minimize memory footprint -----------
 pred.i <- pred %>% 
   crop(bcr.i) %>% 
   mask(bcr.i)
@@ -89,16 +84,16 @@ rm('cov')
 prep_data <- function(id_list) {
   out_df <- Covar %>% 
     dplyr::filter(id %in% id_list) %>%
-    # Use inner_join to ensure only IDs present in both are kept
+    # Use inner_join to ensure only IDs present in both are kept ----------
     inner_join(select(visit, id, year, method), by = "id") %>%
     
-    #Perform mutations and extract matrix-based data
+    # Perform mutations and extract matrix-based data -------------
     mutate(
       method = case_match(method, "PC" ~ 0, "eBird" ~ 1, .default = 2),
-      #Use as.character(id) to index into the 'bird' matrix rows
+      # Use as.character(id) to index into the 'bird' matrix rows ----
       count = as.numeric(bird[as.character(id), spp.i]),
       
-      #Match offsets by ID
+    # Match offsets by ID ---------
       off = offsets[match(id, offsets$id), spp.i]
     ) %>%
     relocate(count) %>%
@@ -150,15 +145,15 @@ for(j in boots.i) {  #note change here
   total_val <- as.numeric(global(proj_rast, "sum", na.rm = TRUE)) # total population
   proj_rast <- proj_rast / total_val # standardized outputs
 
-# Validation Metrics
+# Validation Metrics -------------
   pred_val <- predict(model, dat.t, n.trees = trees.i, type = "response")
   act_val  <- exp(log(dat.t$count) - dat.t$off)#-> density/ha 
   mean_dens <- mean(c(act_val, exp(log(dat.i$count) - dat.i$off)), na.rm = TRUE)
   
-# Other metrics calculated below ---
+# Other metrics calculated below -------
   m_rmse <- rmse(act_val, pred_val, na.rm = TRUE)
   
-# Convert raster to DF once - need to round
+# Convert raster to DF once - need to round -------------
   df_vals <- as.data.frame(c(pred.i[[1:6]], proj_rast), na.rm = TRUE)# append predictors
   names(df_vals)[ncol(df_vals)] <- "rel_dens" # name output from predicted density
   
@@ -178,17 +173,17 @@ for(j in boots.i) {  #note change here
 
 # 7. Save ----
   saveRDS(Selected, file.path(out, paste0("Hab_", spp.i, "_", bcrn.i, "_b", j, ".RDS")))
-# saveRDS(model, file.path(out, paste0("Mod_", spp.i, "_", bcrn.i, "_b", j, ".RDS")))
+# saveRDS(model, file.path(out, paste0("Mod_", spp.i, "_", bcrn.i, "_b", j, ".RDS"))) # write out model
   
   rm(df_vals, Selected, model, proj_rast)
   gc()
 } # end of boots 
 
 ################ End of Models ##############
-#sh code:
+#SH code:
 #!/bin/bash
-#SBATCH --account=def-bayne
-#SBATCH --mail-user=drake.ae@gmail.com
+#SBATCH --account=def-XXXX
+#SBATCH --mail-user=XXXXX
 #SBATCH --mail-type=ALL
 #SBATCH --job-name=ModelAge2
 #SBATCH --time=02:30:00              # Time per species (usually < 2h)
