@@ -216,3 +216,27 @@ write.csv(outputs,file.path(out,paste0("FullvReduced_",spp.i,"_",bcrn.i,".csv"))
 
 } #end conditional 
 ################ End of Models ##############
+
+#!/bin/bash
+#SBATCH --account=def-XXXX
+#SBATCH --mail-user=XXXXXXXXXX
+#SBATCH --mail-type=ALL
+#SBATCH --job-name=Tuning
+#SBATCH --time=10:00:00              # Time per species (usually < 2h)
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1            # GBM is single-threaded here
+#SBATCH --mem=8G                     # Adjust to data size
+#SBATCH --array=1-10%10           # Total number of Species/BCR combos allowing only 50 at a time
+#SBATCH --output=logs/%x-%A_%a.out
+
+# Purge and load the base environment
+
+module purge
+module load gcc/12.3
+module load r/4.4.0
+module load proj/9.2.0 gdal/3.9.1 geos/3.12.0
+
+# Execute the R script, passing the Array Task ID as an argument
+
+Rscript I_ComparingFullVSReducedModel.R $SLURM_ARRAY_TASK_ID
