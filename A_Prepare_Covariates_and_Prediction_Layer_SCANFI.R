@@ -327,8 +327,9 @@ Dataset<-merge(locationID,outFinal, by=c("project", "location", "lat","lon", "ye
 write.csv(Dataset,"SurveyCovariates.csv") # back-up
 # confirm: should be 1,329,023 records - 9 missing
 
-# Limit to final covariates ---
-# Calc Conifer/Deciduous dominance----
+##########################################
+# Calculate final covariates and clean up
+##########################################
 
 Dataset$Loc_pConifer<-(Dataset$Loc_balsamFir+
                       Dataset$Loc_blackSpruce + 
