@@ -1,8 +1,8 @@
-###############################################################
-### F. Look at Correspondence Analysis 
-##  Anna Drake
-### Nov 7, 2025
-###############################################################
+#################################################################
+# title:   Species classification F) Correspondence Analyses -
+# author:  Anna Drake 
+# created: May 25, 2026
+#################################################################
 
 require(dplyr)
 require(tidyr)
