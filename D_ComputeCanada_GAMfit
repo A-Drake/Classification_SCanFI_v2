@@ -1,8 +1,9 @@
-######################################
-# Fit GAM to selection curves
-# Anna Drake
-# Revised fit as of May 22, 2026
-#######################################
+#################################################################
+# title:   Species classification D) Fit GAM to selection curves -
+# HPC optimized
+# author:  Anna Drake 
+# created: Revised fit as of May 22, 2026
+#################################################################
 
 library(dplyr)
 library(tidyr)
