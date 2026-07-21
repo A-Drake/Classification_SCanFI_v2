@@ -17,5 +17,9 @@ Describing these curves involved three steps:
 (2) calculating selection ratios from proportional use:availability (Script B-C) , and 
 (3) fitting the resulting ratios to a selection curve and associated confidence intervals (Script D-E).
 
+Jaccard Similarity analysis and full vs reduced model performance correspond to Script F & G
+
+See manuscript for input data sources.
+
 Analyses were completed in R. Those labelled "Compute Canada" were scripted to run using HPC. The associated 
 shell script is provided at the bottom of these R. scripts
