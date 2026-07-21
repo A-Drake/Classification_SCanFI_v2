@@ -20,7 +20,7 @@ nonforest<-c("AMCR","AMGO","AMPI","ATSP","BAOR","BANS","BARS","BEKI","BBMA","BLJ
              "WIWA","YHBL","ALFL","AMRO","BBCU","YEWA","CORA","NOFL","CEDW")
 
 # Set up path for output folder ------------
-out<-"C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage"
+out<-"C:/Users/XXXXXXXXXXXXXXXXXXXX"
 setwd(out)
 
 ##########################
