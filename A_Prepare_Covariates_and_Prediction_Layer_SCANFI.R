@@ -7,13 +7,8 @@
 
 require(terra)
 require(dplyr)
-require(plyr)
 require(sf)
-require(sp)
 require(data.table)
-require(ggplot2)
-require(gdata)
-require(tidyterra)
 require(exactextractr)
 require(tidyr)
 require(R.utils)
