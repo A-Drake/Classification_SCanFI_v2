@@ -9,6 +9,7 @@ require(terra)
 require(dplyr)
 require(plyr)
 require(sf)
+require(sp)
 require(data.table)
 require(ggplot2)
 require(gdata)
@@ -19,13 +20,17 @@ require(R.utils)
 
 `%unlike%`<-Negate(`%like%`)
 
+terra::tmpFiles(current=T,orphan=T,old=T,remove=T)
+
 # Set up path for data on google drive and output folder ----
-root<-"G:/Shared drives/BAM_NationalModels5" #PC link
+root<-"G:/XXXXXXXXXXX" #PC link
 
 #Get shortcuts to SCANFI 2 files ----
 SCANFIage <- filePath(file.path(root, "SppHabitatAssoc_byBCR", "SCANFI2","SCANFI_age_v2_20260119.lnk"), expandLinks="any")
 SCANFIatt <- filePath(file.path(root, "SppHabitatAssoc_byBCR", "SCANFI2","SCANFI_attributes_v2_20260119.lnk"), expandLinks="any")
-out<-"C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssoications_SCANFIage"
+
+# Select out folder ---
+out<-"C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage"
 setwd(out)
 
 # Get file lists for attributes and age  ------------
@@ -43,74 +48,31 @@ files.ag3 <- files.ag |>
   mutate(year = as.numeric(year))
 
 # Import shapefiles ----
+
 # Canada ----
 can <- read_sf(file.path(root, "Regions", "CAN_adm", "CAN_adm0.shp")) %>% 
-  st_transform(crs=crs("EPSG:3348")) # Canadian boundary
+  st_transform(crs=crs("EPSG:5072")) # Canadian boundary
 
-# BCRs ---- # get 61
+# BCRs ----
 bcr<- read_sf(file.path(root, "Regions", "BAM_BCR_NationalModel.shp")) %>%
-  st_transform(crs=crs("EPSG:3348"))|> st_crop(can)%>% st_intersection(can) #%>%
+  st_transform(crs=crs("EPSG:5072"))|> st_crop(can)%>% st_intersection(can) 
+
 # Remove nothern portion ----
 bcrS<-bcr[-c(1,11),]
-plot(bcrS$geometry)
-
-########################################
-# Import species
-########################################
-# Species list ---
-bootfolder<-"G:/Shared drives/BAM_NationalModels5/output/07_predictions/"
-specieslist<-list.files(bootfolder)
-
-wetland<-c("ALFL","COYE","WISN","SPSA","NESP","MAWR","YHBL","RWBL","SEWR","SWSP","BEKI","SOSA","GRYE","KILL","LEYE","UPSA","RUBL","DUNL")
-grassland<-c("BOBO","GRSP","HOLA","LCSP","SAVS","UPSA","VESP")
-irruptive<-c("WWCR","RECR","PISI","EVGR","PIGR")
-anthr<-c("HOSP","ROPI","EUST")# keep anthropological expansion spp
-open<-c("WIPT","ROPT","WIPT","RKPT","RLHA","GYRF","SNOW","BLUE","NOWH","EYWG","HASP","LALO","SMLO","SNBU","PEFA","AMPI")  # adding AMPI keeping CHCH, HORE and CORE
-
-# retain these where not in the above categories ----
-nonforest<-c("AMCR","AMGO","AMPI","ATSP","BAOR","BANS","BARS","BEKI","BBMA","BLJA",
-             "BGGN","BOBO","BRBL","BRTH","BHCO","CHSP","CCSP","CLSW","COGR","COYE","EABL","EAKI","EAPH","EATO","EUST","FISP","FOSP",
-             "GCSP","GWWA","GRSP","GRCA","GRYE","HOLA","HOSP","HOWR","INBU","KILL","LALO","LCSP","LEYE","LISP","MAWR","MOBL","MODO","NESP",
-             "NOCA","PAWA","RWBL","ROPI","RUBL","SAVS","SEWR","SOSA","SOSP","SPSA","SWSP","TRES","UPSA","VESP","WCSP","WIPT","WISN",
-             "WIWA","YHBL","ALFL","AMRO","BBCU","YEWA","CORA","NOFL","CEDW")
-
-marginal<-c("BGGN","BWWA","GWWA","RBWO","RHWO","ROSA","WITU","YBCU","YTVI") # species barely in Canada
-
-exclude<-c(wetland,grassland,open,marginal)%>%unique()
-
-specieslist<-specieslist[specieslist %notin% exclude]
-
 
 ###############################################
 # 1. PREDICTION LAYERS 
 ###############################################
 
-# Landscape scale extraction using circle matrix on coarsened 30m layers
+# Set up a template for prediction projection
+Template<-rast(file.path(root,"PredictionRasters/ClimateNormal/FFP_1km.tif"))%>% crop(bcrS)%>%mask(bcrS)
 
-# Number of cells to cover radius
-n_cells <- 6 #(2000/360); 360=12*30
-radius<-2000
-
-# Create a matrix of distances from the center
-focal_mat <- matrix(0, nrow=2*n_cells + 1, ncol=2*n_cells + 1)
-center <- n_cells + 1
-
-for (i in 1:nrow(focal_mat)) {
-  for (j in 1:ncol(focal_mat)) {
-    # Euclidean distance from center in meters
-    dist <- sqrt((i - center)^2 + (j - center)^2) * 360
-    if (dist <= radius) {
-      focal_mat[i, j] <- 1
-    }
-  }
-}
+# Note on aggregate method
+# 30m to 200m radius area is 3% over
+# 30m to 2000m radius area is 0.2% over
 
 ## Import tree and age data -----
-
-Template<-rast(file.path(root,"PredictionRasters/Wetland/1km/SurfaceWater_1km.tif")) %>%
-  project("EPSG:3348", method="near") %>% crop(bcrS)%>%mask(bcrS)
-
-# get conifer layers ---
+# Conifer layers ---
 Conlist<-files.at2$path %>% 
   .[.%like% "2025"]%>%
   .[.%unlike% ".tif."]%>%
@@ -127,8 +89,7 @@ prcC<-rast(file.path(Conlist))
 prcC<-prcC%>% aggregate(.,12,"mean", na.rm=T)%>% round(., digits=0)
 prcCs<-app(prcC,fun="sum",na.rm=T)
 
-#Get deciduous layer ---
-
+# Deciduous layer ---
 Dlist<-files.at2$path %>% 
   .[.%like% "2025"]%>%
   .[.%unlike% ".tif."]%>%
@@ -137,18 +98,12 @@ Dlist<-files.at2$path %>%
 prcD<-rast(file.path(Dlist)) %>% aggregate(.,12,"mean", na.rm=T)%>% round(., digits=0)
 
 ## Calc Conifer/Deciduous dominance @ 200m and reproject ----
-Conifer<-prcCs/(prcCs+prcDs) %>% round(2)
-plot(Conifer)
+Conifer<-prcCs/(prcCs+prcD) %>% round(2)
 Con200m<-Conifer%>% project(., Template, method="near") %>% crop(bcrS)%>%mask(bcrS) 
 
 ## Percent forested ----
-pForest<-prcC+prcD
+pForest<-prcCs+prcD
 For200m<-round(pForest,0)%>% project(., Template, method="near") %>% crop(bcrS)%>%mask(bcrS) 
-
-## Set predict year set to 2025 (to match landcover) and method to PC ----
-method<-YR<-Con200m
-values(YR)[values(!is.na(YR))]<-2025
-values(method)[values(!is.na(method))]<-0
 
 ### Age files --------------
 Alist<-files.ag3$path %>% 
@@ -156,148 +111,279 @@ Alist<-files.ag3$path %>%
   .[.%unlike% ".tif."]
 ForestAge<-rast(file.path(Alist))
 
-#Now aggregate age at same dimensions ----
-AgeAgg<-aggregate(ForestAge,12,"median",ties="random", na.rm=T)  # dominant age class at ~210 m radius
-#AgeAge<-mask*AgeAgg # keep if at least 14 estimates are within radius
+#Now aggregate age at same dimensions using median ----
+AgeAgg<-aggregate(ForestAge,12,"median",ties="random", na.rm=T) 
 Age200m<-AgeAgg%>%project(., Template, method="near") %>% crop(bcrS)%>%mask(bcrS) 
 
-# Get landscape values  -------------
-Con2k<-focal(Conifer,w=focal_mat, "mean", na.rm=T)%>% 
-  crop(bcrS)%>%mask(bcrS) # 2km mean conifer mix
-For2k<-focal(pForest,w=focal_mat, "mean", na.rm=T)%>% 
-  crop(bcrS)%>%mask(bcrS)  # 2km mean coverage
-Age2k<-focal(AgeAgg, w=focal_mat, "median", ties="random", na.rm=T)%>% 
-  crop(bcrS)%>%mask(bcrS)  # 2km mean coverage
+### Save aggregated layers ----
+writeRaster(Conifer,"ConAggregate.tif", overwrite=TRUE)
+writeRaster(pForest,"ForAggregate.tif", overwrite=TRUE)
+
+#Get landscape values  -------------
+# Mean of means works for these so aggregate to speed up ----
+
+For2k1<-pForest%>% aggregate(.,2,"mean", na.rm=T) %>% focal(., w=5, fun="mean", na.rm=T) # get a focal average (could use focal_mat but it removes a lot of area at 720 res)
+For2k<-For2k1%>% terra::project("EPSG:3348") %>% terra::project(., Template, method="near") %>% # reproject to 1 km through 3348 to prevent errors
+  crop(bcrS)%>%mask(bcrS) # 2km mean forest %
+
+Con2k1<-Conifer%>% aggregate(.,2,"mean", na.rm=T)%>% focal(., w=5, fun="mean", na.rm=T)
+Con2k<-Con2k1%>% terra::project("EPSG:3348") %>% terra::project(., Template, method="near") %>% 
+  crop(bcrS)%>%mask(bcrS)
+
+# Age: Can't use median of median so have to work from 30m (slow) --------
+
+# Create 1km raster template in the same projection as ForestAge
+Template2<-Template%>% terra::project("EPSG:3348")%>% terra::project(crs(ForestAge)) # for projection to work need to run through 3348
+points_df <- as.data.frame(Template2, xy = TRUE)
+points_sf <- st_as_sf(points_df, coords = c("x", "y"), crs = crs(Template2))
+reg.buff <- st_buffer(points_sf, 2000)  # 8 million points at 1km across Canada
+rm(points_sf)
+gc()
+
+# Use exact extract to get values for each point and then convert to raster (slow) ----
+Age2kcov <-exact_extract(x = Age, y = reg.buff, 'median', progress = TRUE)
+
+# back up ----
+write.csv(Age2kcov,"2kAge.csv")
+
+#transform back to raster ----------
+points_df<-cbind(points_df,LandAge=round(Age2kcov,0))
+Age2kr<-terra::rast(points_df, crs=crs(Template2))
+Age2kFinal<-Age2kr%>% terra::project("EPSG:3348") %>% terra::project(Template)
+Age2kFinal<-Age2kFinal%>% crop(bcrS)%>%mask(bcrS)
 
 ####################################################
 # Write out prediction rasters and prediction stack
 ####################################################
-
+# Local 200m
 writeRaster(Age200m,"Loc_Age1km.tif", overwrite=TRUE)
-writeRaster(Age2k,"Land_Age1km.tif", overwrite=TRUE)
 writeRaster(Con200m,"Loc_Con1km.tif", overwrite=TRUE)
-writeRaster(Con2k,"Land_Con1km.tif", overwrite=TRUE)
 writeRaster(For200m,"Loc_For1km.tif", overwrite=TRUE)
-writeRaster(For2k,"Land_For1km.tif", overwrite=TRUE)
 
+# Landscape 2000m
+writeRaster(For2k,"Land_For1km.tif", overwrite=TRUE)
+writeRaster(Age2kFinal,"Land_Age1km.tif", overwrite=TRUE)
+writeRaster(Con2k,"Land_Con1km.tif", overwrite=TRUE)
+
+## Set predict year set to 2025 (to match landcover) and method to "PC" ----
+method<-YR<-Con200m
+values(YR)[values(!is.na(YR))]<-2025
+values(method)[values(!is.na(method))]<-0
+
+# Stack all --------
 pred<-c(Con200m,Con2k,For200m,For2k,Age200m,Age2k, YR, method)
-names(pred)<-c("LocCon","LandCon","LocFor","LandFor","LocAge","LandAge","year","method")
+names(pred)<-c("Loc_pConifer","Land_pConifer","Loc_closure","Land_closure","LocAge","LandAge","year","method")
 
 # Remove lake areas -------------
 Lakes<-read_sf(file.path("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/Partitioning Change","gis","lhy_000c16a_e.shp"))%>%st_transform(crs=crs(pred))
 Lakes$area<-sf::st_area(Lakes$geometry)
-summary(Lakes$area)
-Lakes<-Lakes%>%filter(area>units::set_units(27840000, m^2))
+Lakes<-Lakes%>%filter(area>units::set_units(2500000, m^2))  #the mean of the shapefiles
 Lakes<-rasterize(Lakes,pred)
+
 pred<-pred%>%mask(Lakes, inverse=T)
-writeRaster(pred, filename="predictionlayer.tif", overwrite=TRUE)
+writeRaster(pred, filename="predictionlayer2025.tif", overwrite=TRUE)
 
 ###########################################################
-# 2. MODEL COVARIATES
+# 2. EXTRACT MODEL COVARIATES
 ###########################################################
 
 #6. Load data package ----
 load(file.path(root, "data/04_NM5.0_data_stratify.Rdata"))
-rm('bird','offsets') # remove heavy items
+rm('bird','offsets','cov','bootlist','bcrlist') # remove heavy items
 gc()
 
-# Get Canadian points and buffer to 200m -----  # confirm projection lines up
+# Import SCANFI template
+Template<-rast(files.ag3[1,1])
+bcrS2<-bcrS%>%st_transform(crs=crs(Template))
+
+# Get Canadian points and buffer to 200m ----
 loc.n <- visit |> 
   dplyr::select(id, project, location, lat, lon, year) |> 
   unique() |> 
   st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
-  st_transform(crs=crs("EPSG:3348"))|> st_crop(bcr) |>
-  st_transform(crs=crs(ForestAge))
+  st_transform(crs=crs(Template))|> st_crop(bcrS2) 
 
+# Remove ID and get unique location x year values (cuts total by ~60,000) 
+loc.u<-visit |> 
+  dplyr::select(project, location, lat, lon, year) |> 
+  unique() |> 
+  st_as_sf(coords=c("lon", "lat"), crs=4326, remove=FALSE) |> 
+  st_transform(crs=crs(Template))|> st_crop(bcrS2) 
 remove("visit")
 gc()
 
-#### Buffer for extraction ----
-loc.buff <- st_buffer(loc.n, 200)
-reg.buff <- st_buffer(loc.n, 2000)
+####################################################
+# Extract time-matched values at each survey point
+####################################################
 
-# Extract modal forest age in 200m buffer --------
-Age<-rast(file.path(Alist))
+#Split surveys into years
+bin<-c(0,1985,1990,1995,2000,2005,2010,2015,2020,2025,2030)
 
-Age200mcov <- loc.buff |> 
-  exact_extract(x=Age, 'median', force_df=TRUE) |> 
-  data.table::setnames("LocAge")|> 
-  cbind(loc.n)
+for (i in c(1:9)){ # run through each 5-year period
 
-gc()
+# Median  forest age in 200m buffer --------
+Alist<-files.ag3$path %>% 
+    .[.%like% bin[i+1]]%>% #Get rasters for period i+1 
+    .[.%unlike% ".tif."]
+
+Age <- rast(Alist)
 
 # Extract all the tree data and process afterwards
-Trees<-files.at2$path %>% 
-  .[.%like% "2025"]%>%
-  .[.%unlike% ".tif."]%>%
-  .[.%unlike% "prcD"]%>%
-  .[.%unlike% "biomass"]%>%
-  .[.%unlike% "closure"]%>%
-  .[.%unlike% "height"]%>%
-  .[. %unlike% "nfiLandcover"]
+Tlist<-files.at2$path %>% 
+    .[.%like%  bin[i+1]]%>% #Get rasters for period i+1 
+    .[.%unlike% ".tif."]%>%
+    .[.%unlike% "biomass"]%>%
+    .[.%unlike% "height"]%>%
+    .[. %unlike% "nfiLandcover"]
+  
+Trees<-rast(Tlist)
+print(bin[i+1])
 
-Trees200mcov <- loc.buff |> 
-  exact_extract(x=Trees, 'mean', force_df=TRUE) |> 
-  cbind(loc.n)
+# extract surveys that occurred in this period --------------
+loc.y<-loc.u|>filter(year>bin[i]&year<=bin[i+1])
 
+# still too large so split into 20 chunks for processing -----------------
+count<-round(nrow(loc.y)/20,0)  
+  
+for (j in c(0:19)){
+start<-(j*count)+1
+end<-(j+1)*count
+  
+if(end>nrow(loc.y)){
+  end<-nrow(loc.y)
+  }
+
+loc.y.j<-loc.y[c(start:end),] # chunk j
+
+# Buffer for extraction ----
+loc.buff <- st_buffer(loc.y.j, 200)
+reg.buff <- st_buffer(loc.y.j, 2000)
+print("done buffering")
+
+Age_values <- exact_extract(x = Age, y = loc.buff, 'median', progress = FALSE)
+
+Trees200mcov <- exact_extract(x=Trees,y=loc.buff, 'mean', progress= FALSE)
+colnames(Trees200mcov) <- gsub("mean.SCANFI_spsCC_", "Loc_", colnames(Trees200mcov))
+print("done local")
 rm("loc.buff")
 
-# Extract modal forest age in 2000m buffer - v. slow ----
-AgeReg <- reg.buff |> 
-  exact_extract(x=Age, 'median', force_df=TRUE) |> 
-  data.table::setnames("LandAge")|> 
-  cbind(loc.n)
+# Extract modal forest age in 2000m buffer (v. slow) ----
+Age_2k <- exact_extract(x = Age, y = reg.buff, 'median', progress = FALSE)
 
-Trees2kcov <- reg.buff |> 
-  exact_extract(x=Trees, 'mean', force_df=TRUE) |> 
-  cbind(loc.n)
+Trees2kcov <- exact_extract(x=Trees,y=reg.buff, 'mean', progress= FALSE)
+colnames(Trees2kcov) <- gsub("mean.SCANFI_spsCC_", "Land_", colnames(Trees2kcov))
 
-rm("reg.buff")
+AllOut <- cbind(
+  sf::st_drop_geometry(loc.y.j), 
+  LocAge = round(Age_values, 0), 
+  Trees200mcov,
+  LandAge = round(Age_2k, 0), 
+  Trees2kcov
+)
 
+write.csv(AllOut,paste0("Classification_covariates_",i,"_",j,".csv"))
+rm("reg.buff","AllOut")
 gc()
+  
+} # end of chunk
+} # end of period
 
-#drop geometry and round to whole years ----
-AgeReg<-AgeReg[-8]
+#### Done getting buffered values ######################
 
+###################################################
+## Roll values into single dataset 
+###################################################
+bin<-c(0,1985,1990,1995,2000,2005,2010,2015,2020,2025,2030)
 
-cov2<-cov[,c(1,18,22,26,28,30,36,38,40,42,44,103)]
+outputsFinal<-list()
+for (i in c(1:9)){
+  
+yr<-bin[i+1] # year of age raster used
+PointVal <- list.files(file.path(out, "RawCovariate"), recursive = TRUE, full.names = TRUE)
+PointVal.i<-PointVal%>%.[.%like% paste0("_",i,"_")]
+outputs<-lapply(PointVal.i, read.csv)
+outJ<-do.call(rbind,outputs)
 
+#Simplify and unify column names
+#Land and local
+outJ <- outJ %>%
+  rename_with(~ gsub("_\\d{4}.*$", "", .), starts_with("Land_"))
+outJ <- outJ %>%
+  rename_with(~ gsub("_\\d{4}.*$", "", .), starts_with("Loc_"))
+# Mean closure
+outJ <- outJ %>%
+  rename_with(~ c("Loc_closure","Land_closure"), starts_with("mean."))
 
-# There are 10 forest metrics - 9 conifer and 1 deciduous ---
+### Correct Age class to survey year (within the 5-year window of the layer) -----
+  
+outJ$LocAge<-outJ$LocAge-(yr-outJ$year) # correct age by survey year
+outJ$LocAge<-ifelse(outJ$LocAge<0,NA,outJ$LocAge) # remove any stands that were disturbed in that window (negative age)
 
-# Conifer ----
-cov2$C<-round((cov2$SCANFIBalsamFir_1km+
-                      cov2$SCANFIBlackSpruce_1km+
-                      cov2$SCANFIprcC_1km+
-                      cov2$SCANFIDouglasFir_1km +
-                      cov2$SCANFIJackPine_1km+
-                      cov2$SCANFILodgepolePine_1km+
-                      cov2$SCANFIPonderosaPine_1km +
-                       cov2$SCANFITamarack_1km +
-                       cov2$SCANFIWhiteRedPine_1km),0)
-#total forest ----
-cov2$Forest<-round((cov2$SCANFIBalsamFir_1km+
-                      cov2$SCANFIBlackSpruce_1km+
-                      cov2$SCANFIprcC_1km+
-                      cov2$SCANFIDouglasFir_1km +
-                      cov2$SCANFIJackPine_1km+
-                      cov2$SCANFILodgepolePine_1km+
-                      cov2$SCANFIPonderosaPine_1km +
-                      cov2$SCANFITamarack_1km +
-                      cov2$SCANFIWhiteRedPine_1km +
-                      cov2$SCANFIprcD_1km),0)
+outJ$LandAge<-outJ$LandAge-(yr-outJ$year) # correct age by survey year
+outJ$LandAge<-ifelse(outJ$LandAge<0,NA,outJ$LandAge) # remove any stands that were disturbed in that window 
+outJ<-outJ[-1]
+outputsFinal[[i]]<-outJ
 
-cov2$Forest<-ifelse(cov2$Forest>100,100,cov2$Forest)
+}
+outFinal<-do.call(rbind,outputsFinal)
+outFinal<-unique(outFinal) # some duplicates - skip these
+locationID <- st_drop_geometry(loc.n)
+Dataset<-merge(locationID,outFinal, by=c("project", "location", "lat","lon", "year"))
+write.csv(Dataset,"SurveyCovariates.csv") # back-up
+# confirm: should be 1,329,023 records - 9 missing
 
-# Proportion conifer -----
-cov2$Conifer<-round((cov2$C/cov2$Forest),2)
+# Limit to final covariates ---
+# Calc Conifer/Deciduous dominance----
 
-names(AgeReg)
-names(cov2)
-# Put together into a single covariate set ----
-Covar<-merge(cov2[,c(1,12:13,15:16)],Agecov[,c(2,8)], by="id", all.x=T)
-Covar<-merge(Covar,AgeReg[,c(2,8)], by="id",all.x=T)  ###TO HERE
-View(Covar)
-write.csv(Covar,"ClassificationCovariates.csv")
+Dataset$Loc_pConifer<-(Dataset$Loc_balsamFir+
+                      Dataset$Loc_blackSpruce + 
+                      Dataset$Loc_douglasFir+ 
+                      Dataset$Loc_jackPine+ 
+                      Dataset$Loc_lodgepolePine + 
+                      Dataset$Loc_otherConiferous +
+                      Dataset$Loc_ponderosaPine + 
+                      Dataset$Loc_tamarack+        
+                      Dataset$Loc_whiteRedPine)/
+    (Dataset$Loc_balsamFir+ 
+     Dataset$Loc_blackSpruce + 
+     Dataset$Loc_broadleaf + # broadleaf = deciduous
+     Dataset$Loc_douglasFir+ 
+     Dataset$Loc_jackPine+ 
+     Dataset$Loc_lodgepolePine + 
+     Dataset$Loc_otherConiferous +
+     Dataset$Loc_ponderosaPine + 
+     Dataset$Loc_tamarack+        
+     Dataset$Loc_whiteRedPine)
+Dataset$Loc_pConifer<-round(Dataset$Loc_pConifer,digits=2)
 
-######### End of input prep, survey data comes from V5 objects  #############
+# landscape values
+
+Dataset$Land_pConifer<-(Dataset$Land_balsamFir+
+                         Dataset$Land_blackSpruce + 
+                         Dataset$Land_douglasFir+ 
+                         Dataset$Land_jackPine+ 
+                         Dataset$Land_lodgepolePine + 
+                         Dataset$Land_otherConiferous +
+                         Dataset$Land_ponderosaPine + 
+                         Dataset$Land_tamarack+        
+                         Dataset$Land_whiteRedPine)/
+  (Dataset$Land_balsamFir+ 
+     Dataset$Land_blackSpruce + 
+     Dataset$Land_broadleaf + # broadleaf = deciduous
+     Dataset$Land_douglasFir+ 
+     Dataset$Land_jackPine+ 
+     Dataset$Land_lodgepolePine + 
+     Dataset$Land_otherConiferous +
+     Dataset$Land_ponderosaPine + 
+     Dataset$Land_tamarack+        
+     Dataset$Land_whiteRedPine)
+Dataset$Land_pConifer<-round(Dataset$Land_pConifer,digits=2)
+
+DatasetS<-Dataset[c("project","location","lat","lon","year",
+                    "id","LocAge","Loc_closure","LandAge",             
+                    "Land_closure","Loc_pConifer","Land_pConifer")]  
+DatasetS$Loc_closure<-round(DatasetS$Loc_closure,2)
+DatasetS$Land_closure<-round(DatasetS$Land_closure,2)
+write.csv(DatasetS,"ClassificationCovariates.csv")
+
+############ end of dataset ##############
