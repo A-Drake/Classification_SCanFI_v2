@@ -13,9 +13,6 @@ library(mgcv)
 args <- commandArgs(trailingOnly = TRUE)
 task_id <- as.numeric(args[1]) 
 
-#Test code ---
-#root <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data"
-
 # Define Paths ---------------
 root <- "./data" 
 out <- "./GAM_results"
@@ -174,4 +171,4 @@ module load r/4.4.0
 module load proj/9.2.0 gdal/3.9.1 geos/3.12.0
 
 # Execute the R script, passing the Array Task ID as an argument
-Rscript C_ComputeCanada_GAMfit.R $SLURM_ARRAY_TASK_ID
+Rscript D_ComputeCanada_GAMfit.R $SLURM_ARRAY_TASK_ID
