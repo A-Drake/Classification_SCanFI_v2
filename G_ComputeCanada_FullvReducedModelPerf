@@ -1,8 +1,8 @@
 #################################################
-# Species Classification V5 - SCANFI age
-# G. Compare landscape vs local only model
-# Anna Drake
-# May 26, 2026
+# title: Species Classification V5 - SCANFI age
+# (G) Compare landscape vs local-only model - HPC 
+# author: Anna Drake
+# created: May 26, 2026
 ################################################
 
 require(gbm)
@@ -13,9 +13,6 @@ require(hydroGOF)
 # 1. HPC Setup & Args ----
 args <- commandArgs(trailingOnly = TRUE)
 task_id <- as.numeric(args[1]) 
-
-#Test code ---
-#root <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data"
 
 # Define Paths (Use environment variables or scratch space)
 # On HPC, always use $SCRATCH for high-speed I/O
@@ -75,7 +72,6 @@ master_bcr_data <- Covar %>%
   ) %>%
   relocate(count) %>%
   filter(!is.na(count))
-
 
 ###################################################
 # Run species x bcr
@@ -215,6 +211,7 @@ outputs<-data.frame(species=spp.i,
 write.csv(outputs,file.path(out,paste0("FullvReduced_",spp.i,"_",bcrn.i,".csv")))
 
 } #end conditional 
+
 ################ End of Models ##############
 
 #!/bin/bash
