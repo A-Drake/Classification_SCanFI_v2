@@ -204,5 +204,5 @@ module load udunits
 
 # Execute the R script, passing the Array Task ID as an argument
 
-Rscript C_ComputeCanada_Model_SCANFIAge.R $SLURM_ARRAY_TASK_ID
+Rscript C_ComputeCanada_ModelOutputScript.R $SLURM_ARRAY_TASK_ID
 
