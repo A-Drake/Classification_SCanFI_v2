@@ -25,7 +25,7 @@ SCANFIage <- filePath(file.path(root, "SppHabitatAssoc_byBCR", "SCANFI2","SCANFI
 SCANFIatt <- filePath(file.path(root, "SppHabitatAssoc_byBCR", "SCANFI2","SCANFI_attributes_v2_20260119.lnk"), expandLinks="any")
 
 # Select out folder ---
-out<-"C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage"
+out<-"C:/Users/XXXXXXXXXXX"
 setwd(out)
 
 # Get file lists for attributes and age  ------------
@@ -170,7 +170,7 @@ pred<-c(Con200m,Con2k,For200m,For2k,Age200m,Age2k, YR, method)
 names(pred)<-c("Loc_pConifer","Land_pConifer","Loc_closure","Land_closure","LocAge","LandAge","year","method")
 
 # Remove lake areas -------------
-Lakes<-read_sf(file.path("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/Partitioning Change","gis","lhy_000c16a_e.shp"))%>%st_transform(crs=crs(pred))
+Lakes<-read_sf(file.path("C:/Users/XXXXXXXXXXXX","gis","lhy_000c16a_e.shp"))%>%st_transform(crs=crs(pred))
 Lakes$area<-sf::st_area(Lakes$geometry)
 Lakes<-Lakes%>%filter(area>units::set_units(2500000, m^2))  #the mean of the shapefiles
 Lakes<-rasterize(Lakes,pred)
