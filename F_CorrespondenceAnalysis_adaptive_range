@@ -109,7 +109,7 @@ GroupRatio<-Ratios%>%select(BCR,species,type,value,Label,stdRat)
 PosthocID<-c("BOWA_can5","BTBW_can80","MAWA_can40","WBNU_can81","WWCR_can5","YBCU_can13")
 
 # Remove the bad LR species
-ExcludeLR<-read.csv("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data/SpeciesBCRs_toexclude.csv")
+ExcludeLR<-read.csv("C:/XXXXXXXXXXXXXXX/SpeciesBCRs_toexclude.csv")
 ExcludeLR$sppBCR<-paste(ExcludeLR$spp,ExcludeLR$BCR,sep="_")
 Remove<-ExcludeLR$sppBCR
 
@@ -325,7 +325,7 @@ for(j in seq_along(Varlist)){ # start covariate
     Shape<-merge(subset(Ratios, Ratios$type==Varlist[j]),o,by=c("Label","type"))
     
     # Average within cluster  --
-    mean<- Shape%>%group_by(cluster,type,value)%>%summarize(meanshp=mean(stdRat, na.rm=T), medshp=median(stdRat, na.rm=T)) # strength=round(median(tot),1) average of all species in group
+    mean<- Shape%>%group_by(cluster,type,value)%>%summarize(meanshp=mean(stdRat, na.rm=T), medshp=median(stdRat, na.rm=T)) 
     nsample<-Shape%>%select(cluster,Label)%>%unique()%>%group_by(cluster)%>%summarize(n=length(Label)) 
     Shape<-merge(Shape,mean,by=c("value","cluster","type"))
     Shape<-merge(Shape,nsample,by=c("cluster"))
@@ -356,7 +356,7 @@ for(j in seq_along(Varlist)){ # start covariate
 # 5 local age  5 or 1
 
 groupshape<-list()
-klist<-c(5,8,5,5,4,4)  #land-level cover suggested to be 3 but the 9 split seems better?
+klist<-c(5,8,5,5,4,4)  #optimal breaks from visualization and mathematical splits
 # Run optimal groups
 
 for(j in seq_along(Varlist)){ # start covariate
@@ -372,7 +372,7 @@ for(j in seq_along(Varlist)){ # start covariate
     # Average and IQR + 90 CI within cluster  --
     mean<- Shape%>%group_by(cluster,type,value)%>%summarize(meanshp=mean(stdRat, na.rm=T), medshp=median(stdRat, na.rm=T),
                                                             Q1=quantile(stdRat,prob=0.25, na.rm=T), Q3=quantile(stdRat,prob=0.75, na.rm=T),
-                                                            u90=quantile(stdRat,prob=0.95, na.rm=T),l90=quantile(stdRat,prob=0.05, na.rm=T)) # strength=round(median(tot),1) average of all species in group
+                                                            u90=quantile(stdRat,prob=0.95, na.rm=T),l90=quantile(stdRat,prob=0.05, na.rm=T)) 
     nsample<-Shape%>%select(cluster,Label)%>%unique()%>%group_by(cluster)%>%summarize(n=length(Label)) 
 
     Shape<-merge(Shape,mean,by=c("value","cluster","type"))
@@ -466,8 +466,9 @@ count<-unique(paste0(Shape$Label,"_",Shape$type))
 size<-length(unique(shape_cleaned$PrefLab))  
 
 png(paste0(Varlist[j],"_refinedGroup_smoothExtended.png"), width=12,height=round(size/2,0)*2.5 , units = "in",res = 500) 
+#png(paste0(Varlist[j],"_refinedGroup_smoothTruncated.png"), width=12,height=round(size/2,0)*2.5 , units = "in",res = 500) # for minmax limited figures
 
-  plot5 <- ggplot(
+plot5 <- ggplot(
     data = shape_cleaned, aes(x = value, y = medshp, group=PrefLab)) +  
     ggtitle(title[j]) + 
     ylab("scaled (ln(w))\n(proportion of total selection)") + 
@@ -486,7 +487,7 @@ png(paste0(Varlist[j],"_refinedGroup_smoothExtended.png"), width=12,height=round
       legend.position = "none", 
       plot.title = element_text(face = "bold", size = 18),
       strip.text = element_text(size = 16), # Increases subheading size
-      text = element_text(size = 12)                       # Changes base text size correctly
+      text = element_text(size = 12)                     
     )
   
   print(plot5)
