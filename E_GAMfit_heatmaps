@@ -1,8 +1,8 @@
-######################################
-# Plotting Preference out ----
-# Anna Drake
-# May 12, 2026
-#########################################
+###########################################################
+# title:   Species classification (E) Plotting Preference
+# author:  Anna Drake
+# created: May 12, 2026
+###########################################################
 
 library(dplyr)      
 library(data.table) 
