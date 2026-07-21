@@ -15,8 +15,8 @@ require(scico)
 `%notin%` <- Negate(`%in%`)
 
 # Set up path for data ----
-root <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/GAMOutputs_Compiled"
-out<- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/Plots"
+root <- "C:/Users/XXXXXXXXXXXXXXXXXXXX"
+out<- "C:/Users/XXXXXXXXXXXXXXXXXX"
 setwd(out)
 
 # BCR name lookup ----
@@ -59,7 +59,7 @@ bcrs<-c("can40","can41","can5","can10","can9","can60","can70","can80","can61",
 PosthocID<-c("BOWA_can5","BTBW_can80","MAWA_can40","WBNU_can81","WWCR_can5","YBCU_can13")
 
 # Remove the bad LR species
-ExcludeLR<-read.csv("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/data/SpeciesBCRs_toexclude.csv")
+ExcludeLR<-read.csv("C:/Users/XXXXXXXXXXXXXXX/SpeciesBCRs_toexclude.csv")
 ExcludeLR$sppBCR<-paste(ExcludeLR$spp,ExcludeLR$BCR,sep="_")
 
 Remove<-ExcludeLR$sppBCR
@@ -67,7 +67,7 @@ Remove<-ExcludeLR$sppBCR
 # ID where regional values are important
 ###########################################
 
-FullvReduced<-read.csv("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/Summaries/FullvsReducedModelSummary.csv")
+FullvReduced<-read.csv("C:/Users/XXXXXXXXXXXXXXXXXXX/FullvsReducedModelSummary.csv")
 Full<-FullvReduced%>%filter(Devdecision=="Regional values important"|RMSEdecision=="Regional values important")
 Fullspp<-paste(Full$species,Full$BCR,sep="_")
 
@@ -86,9 +86,6 @@ cat("Importing models for ", bcrn.i)
 # Average GAM-modeled preference strength over bootstraps divided by number of Values ---
 total<-PlotStat%>%group_by(species,type,BCR)%>%summarize(totav=round(sum(abs(fit), na.rm=T)/length(type),2),
                                                       .groups = "drop")
-
-# For methods?
-sumstat<-total%>%group_by(type)%>%summarize(mean=mean(totav, na.rm=T))
 
 write.csv(total,paste0("GAM_SelectionStrength_",bcrn.i,".csv"))
 
@@ -141,7 +138,7 @@ BGAMp <- BGAMp %>%
     
     
     # ------------------------------------------------------------
-    # 2. Apply reporting limits based on 75% CI classification - can toggle to 90CI later
+    # 2. Apply reporting limits based on 75% CI classification - toggle to 90CI if wanted below
     # ------------------------------------------------------------
     rankCI = case_when(
       
@@ -175,7 +172,7 @@ BGAMp <- BGAMp %>%
     )
   )
 
-#Toggle on = 90% CI vs base 75% CI - when switching, remember to toggle plot label
+#Toggle on = 90% CI vs base 75% CI - when switching, remember to also toggle plot label
 BGAMp$rankCI <-ifelse(BGAMp$alpha<90,"neutral",as.character(BGAMp$rankCI))
 
 # ------------------------------------------------------------
@@ -188,7 +185,7 @@ Peak <- BGAMp[,c("species","BCR","type","value","rankCI")] %>%
   summarize(peak = quantile(value, 0.5, na.rm = TRUE), .groups = "drop")
 
 # Mid-values for avoidance (bottom 25%)
-#Avoid <- BGAMp %>%
+# Avoid <- BGAMp %>%
 #  filter(rankCI == "avoids (bottom 25%)") %>%
 #  group_by(species, type, BCR) %>%
 #  summarize(trough = quantile(value, 0.5, na.rm = TRUE), .groups = "drop")
@@ -204,7 +201,7 @@ BGAMp <- BGAMp %>%
 print("preference labelled....")  
 
 #-----------------------------------
-# Filter species ----- using wetland and shorebird class from State of Birds + grassland + RUBL which I would consider wetland assoc but isn't listed as =
+# Filter species 
 # ----------------------------------
 Plot<-BGAMp%>% 
     filter(species %notin% c(wetland,grassland,open))
@@ -288,7 +285,7 @@ lines_set2 <- data.frame(
     
     
  png(paste0("GAM_AgePreference90CI",bcrn.i,".png"), width=16,height=height, units = "in", res = plot_res)
-# png(paste0("GAMPreference75CI",bcrn.i,".png"), width=15,height=height, units = "in",res = 500)
+# png(paste0("GAMPreference75CI",bcrn.i,".png"), width=15,height=height, units = "in",res = 500) # if running the 75% threshold
     
 Forplot1<-Forplot %>% 
   filter(type %in% c("LocAge","LandAge")) %>% 
@@ -298,7 +295,7 @@ Forplot1<-Forplot %>%
 
 
 plt1<-Forplot1 %>%
-      ggplot(aes(value,y=y_reordered,  #can also use just the upper 5% (dualorder val) 
+      ggplot(aes(value,y=y_reordered,  
                  fill=as.factor(rankCI))) +
   geom_raster() +
   scale_y_reordered(expand = expansion(mult = c(0,0)))+
@@ -306,7 +303,7 @@ plt1<-Forplot1 %>%
   scale_fill_manual(values = pal, na.value = "transparent") +
   labs(x = "", y = "", title = name) +
 
-#Add value cut lines ----
+# Add value cut lines ----
     geom_vline(data = lines_set1, aes(xintercept = vals), col = "red") +
   
 # Split and order plot ---------------
@@ -316,7 +313,7 @@ plt1<-Forplot1 %>%
         legend.text  = element_text(size = 22 * text_multiplier), 
         legend.key.size = unit(1.2 * text_multiplier, "cm"),
         
-        # CRITICAL: Y-axis text scales down as species list grows
+        # Y-axis text scales down as species list grows
         axis.text.y = element_markdown(vjust = 0.5, size = 15 * text_multiplier), 
         
         axis.text.x = element_text(size = 14), 
@@ -332,8 +329,9 @@ gc()
 ################################
 # II. Proportion Conifer
 ################################
+
 png(paste0("GAM_ConiferPreference90CI",bcrn.i,".png"), width=16,height=height, units = "in", res = plot_res)
-# png(paste0("GAMPreference75CI",bcrn.i,".png"), width=15,height=height, units = "in",res = 500)
+# png(paste0("GAMPreference75CI",bcrn.i,".png"), width=15,height=height, units = "in",res = 500) # if using 75% CI
 
 Forplot2<-Forplot%>% filter(type %in% c("Loc_pConifer","Land_pConifer")) %>%
   mutate(type = factor(type, levels = c("Loc_pConifer", "Land_pConifer")))%>%
@@ -341,7 +339,7 @@ Forplot2<-Forplot%>% filter(type %in% c("Loc_pConifer","Land_pConifer")) %>%
   arrange(type) #order levels
   
   plt2<-Forplot2 %>%
-      ggplot(aes(value,y=y_reordered,  #can also use just the upper 5% (dualorder val) 
+      ggplot(aes(value,y=y_reordered, 
                  fill=as.factor(rankCI))) +
       geom_raster() +
       scale_y_reordered(expand = expansion(mult = c(0, 0.0)))+
@@ -359,7 +357,7 @@ Forplot2<-Forplot%>% filter(type %in% c("Loc_pConifer","Land_pConifer")) %>%
       legend.text  = element_text(size = 22 * text_multiplier), 
       legend.key.size = unit(1.2 * text_multiplier, "cm"),
       
-      # CRITICAL: Y-axis text scales down as species list grows
+      # Y-axis text scales down as species list grows
       axis.text.y = element_markdown(vjust = 0.5, size = 15 * text_multiplier), 
       
       axis.text.x = element_text(size = 14), 
