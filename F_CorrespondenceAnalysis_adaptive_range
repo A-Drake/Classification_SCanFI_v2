@@ -19,26 +19,26 @@ require(cluster)
 `%notin%` <- Negate(`%in%`)
 
 # Set up path for data ----
-root <- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/GAMOutputs_Compiled"
-out<- "C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Compute Canada Code/Plots"
+root <- "C:/XXXXXXXXXXXXXXXXXXX"
+out<- "C:/XXXXXXXXXXXXX"
 setwd(out)
+#####################################################
+# Forest bird categories - State of the Birds 
+#####################################################
 
-# Forest bird categories - State of the Birds ###
-# Define non-forest species
-
+# Define non-forest species ----------------
 nonforest<-c("WITU","AMCR","AMGO","AMPI","ATSP","BAOR","BANS","BARS","BEKI","BBMA","BLJA",
              "BGGN","BOBO","BRBL","BRTH","BHCO","CHSP","CCSP","CLSW","COGR","COYE","EABL","EAKI","EAPH","EATO","EUST","FISP","FOSP",
              "GCSP","GWWA","GRSP","GRCA","GRYE","HOLA","HOSP","HOWR","INBU","KILL","LALO","LCSP","LEYE","LISP","MAWR","MOBL","MODO","NESP",
              "NOCA","PAWA","RWBL","ROPI","RUBL","SAVS","SEWR","SOSA","SOSP","SPSA","SWSP","TRES","UPSA","VESP","WCSP","WIPT","WISN",
              "WIWA","YHBL","ALFL","AMRO","BBCU","YEWA","CORA","NOFL","CEDW","YBCU") #added YBCU & WITU to this list
-#retain ALFL? added WITU to non forest
+
 wetland<-c("ALFL","COYE","WISN","SPSA","NESP","MAWR","YHBL","RWBL","SEWR","SWSP","BEKI","SOSA","GRYE","KILL","LEYE","UPSA","RUBL","DUNL")
 grassland<-c("BOBO","GRSP","HOLA","LCSP","SAVS","UPSA","VESP")
 
 irruptive<-c("WWCR","RECR","PISI","EVGR","RBGR","PIGR") # irruptive
 anthr<-c("HOSP","ROPI","EUST")  # anthropological expansion spp
 open<-c("WIPT","ROPT","WIPT","RKPT","SNOW","BLUE","NOWH","EYWG","HASP","LALO","SMLO","SNBU","PEFA","AMPI")  # adding AMPI, removing CHCH, HORE and CORE  #arctic open land species
-
 
 # BCR name lookup ----
 bcrlookup<-data.frame(name=c("Northern Pacific Rainforest","Great Basin","Northern Rockies",
@@ -52,7 +52,6 @@ bcrlookup<-data.frame(name=c("Northern Pacific Rainforest","Great Basin","Northe
                       num=c("can5","can9" ,"can10","can12","can13","can14",
                             "can40","can41","can42","can60","can61","can70","can71",
                             "can72","can80","can81","can82"))
-
 
 # 2. Bring in materials ---
 bcrs<-c("can40","can41","can5","can10","can9","can60","can70","can80","can61",
@@ -77,12 +76,10 @@ ck<-unique(paste(Corresp$BCR,Corresp$species,Corresp$type)) # 7428 files is corr
 
 ## Remove open, wetland and grassland species ----
 Corresp<-Corresp %>% subset(.,.$species %notin% c(wetland,grassland,open))
-ck<-unique(paste(Corresp$BCR,Corresp$species,Corresp$type)) # 6276
 
 # How many species?
 unique(Corresp$species) #117
 
-# move this into comparisons
 # Get the species x bcr x covariate selection area and mean strength  ---
 RangeTot<-Corresp%>%group_by(BCR,species,type)%>%summarize(tot=sum(abs(fit),na.rm=T), 
                                                           totav=round(sum(abs(fit), na.rm=T)/length(type),2),
@@ -96,19 +93,12 @@ Ratios<-merge(Corresp,RangeTot, by=c("BCR","species","type"))
 # Standardize the selection ratios by their total area within the range (so represent the proportional deviation)
 Ratios$stdRat<-Ratios$fit/Ratios$tot
 
-ggplot(aes(value,fit, col=c(BCR)),dat= Ratios[c(1:5000,500000:550000,850000:858000)]) +  geom_line(alpha=0.2) +
-  theme(legend.position="none") +facet_wrap(~type, scales="free")
-
 # Clean up ----
 Ratios$Label<-paste(Ratios$species,Ratios$BCR,sep="_")
 Ratios$LabelType<-paste(Ratios$Label,Ratios$type,sep="_") 
 
-# Remove generalist species
+# Remove low selection strength species ------
 Ratios<-Ratios%>%subset(.,.$totav>=0.1)  #discard low selection curves as noise
-
-# More methods
-#method2<-unique(Ratios$Label) #1038; 6276-6142
-#ck<-unique(paste(area$BCR,area$species,area$type))
 
 GroupRatio<-Ratios%>%select(BCR,species,type,value,Label,stdRat)
 
@@ -124,7 +114,6 @@ ExcludeLR$sppBCR<-paste(ExcludeLR$spp,ExcludeLR$BCR,sep="_")
 Remove<-ExcludeLR$sppBCR
 
 GroupRatio<-subset(GroupRatio,GroupRatio$Label %notin% c(PosthocID,Remove))
-View(GroupRatio)
 
 ############################################################################################
 # For each co-variate, look at differences preference and avoidance but not strength ---
@@ -148,9 +137,9 @@ for(j in c(1:length(Varlist))){ # start covariate
         .[,-c(1)] # drop value and type to produce matrix 
       gc()  
   }
+
 # Methods -----    
-#length(unique(sublist$Label))#1014
- # Forest cover spp only
+# Forest cover spp only
 
   else { # remove non-forest birds for forest trait analysis ---
     sublist<-GroupRatio%>%subset(., .$type==Varlist[j])%>%
@@ -228,7 +217,7 @@ saveRDS(hc,"ClusterGrouping_AdaptiveRangeMay29.RDS")
 saveRDS(spav,"ClusterMatrix_AdaptiveRangeMay29.RDS")
 
 ########################################
-# Calculate average similarity
+# Calculate average similarity within-species
 #######################################
 
 sim<-list()
@@ -319,7 +308,10 @@ optimal_k <- num_objects - joins_below_threshold
 cat(sprintf("Mojena's Criterion suggests splitting %s into K = %d clusters.\n",Varlist[j], optimal_k))
 }
 
-#### Try different grouping numbers and visualize
+# ---------------------------------------------
+# Try different grouping numbers and visualize
+# ---------------------------------------------
+
 for(j in seq_along(Varlist)){ # start covariate
   for (k in c(2:9)){ # max groupings suggested by above
     
@@ -364,7 +356,7 @@ for(j in seq_along(Varlist)){ # start covariate
 # 5 local age  5 or 1
 
 groupshape<-list()
-klist<-c(5,8,5,5,4,4)  #land level cover suggested to be 3 but the 9 split seems better?
+klist<-c(5,8,5,5,4,4)  #land-level cover suggested to be 3 but the 9 split seems better?
 # Run optimal groups
 
 for(j in seq_along(Varlist)){ # start covariate
@@ -377,7 +369,7 @@ for(j in seq_along(Varlist)){ # start covariate
     # Merge with dataframe --
     Shape<-merge(subset(GroupRatio, GroupRatio$type==Varlist[j]),o,by=c("Label","type"))
     
-    # Average within cluster  --
+    # Average and IQR + 90 CI within cluster  --
     mean<- Shape%>%group_by(cluster,type,value)%>%summarize(meanshp=mean(stdRat, na.rm=T), medshp=median(stdRat, na.rm=T),
                                                             Q1=quantile(stdRat,prob=0.25, na.rm=T), Q3=quantile(stdRat,prob=0.75, na.rm=T),
                                                             u90=quantile(stdRat,prob=0.95, na.rm=T),l90=quantile(stdRat,prob=0.05, na.rm=T)) # strength=round(median(tot),1) average of all species in group
@@ -389,17 +381,16 @@ for(j in seq_along(Varlist)){ # start covariate
     
     groupshape[[j]]<-Shape
 }  
-getwd()
-saveRDS(groupshape,"ClusterGroupingPlotAdaptiveRangeMay29.RDS")
-groupshape<-readRDS("ClusterGroupingPlotAdaptiveRangeMay29.RDS")
 
-# Need to set a membership # to count as a cluster 
-# Plot groupings
+saveRDS(groupshape,"ClusterGroupingPlotAdaptiveRangeMay29.RDS")
+
+
+# Plot groupings ---------------------------
 Shape<-do.call(rbind, groupshape)
 Total<-Shape[,c("type","n")]%>%unique(.)%>%group_by(type)%>%summarize(typen=sum(n))
 Shape<-merge(Shape,Total,by="type")
 
-# ID cross over areas
+# ID 0-line crossover areas for interpretation ---------------
 critvals<-Shape[,c("type","medshp","cluster","value")]%>% subset(.,abs(.$medshp)<0.005) %>%unique()
 #View(critvals)
 
@@ -455,10 +446,6 @@ minmax<-Shape%>%group_by(type,cluster, BCR)%>% summarize(max=max(value))
 minmax<-minmax%>%group_by(type, cluster)%>% summarize(minmax=min(max))
 Shape<-merge(Shape,minmax,by=c("type", "cluster"))
 
-#Methods
-unique(paste0(Shape$type,Shape$PrefLab))
-#table(unique(Shape$type,Shape$PrefLab))
-
 ######################################################
 # Plot out clusters and overlay group median ----
 ######################################################
@@ -507,7 +494,7 @@ png(paste0(Varlist[j],"_refinedGroup_smoothExtended.png"), width=12,height=round
   gc()
 
 } # end of group
-getwd()
+
 ############################################
 #### Make Table of outputs -----
 ############################################
@@ -527,14 +514,12 @@ LabelWide <- LabelWide %>% select("species","BCR","Land_closure","Loc_closure","
          "Reg. Forest Age (yrs)"="LandAge",
          "Loc. Forest Age (yrs)"="LocAge"
 )
-# Calculate group fidelity metrics
-View(LabelWide)
+# Calculate group fidelity metrics -----------------
+
 # Single group species
-Table<-table(LabelWide$species, LabelWide$`Reg. Forest Age (yrs)`)%>% as.data.frame()%>%subset(.,!is.na(.$Freq)) %>% subset(.,.$Var2!="no cluster") #sub group in here
-
-Table<-table(LabelWide$species, LabelWide$`Loc. Prop. Conifer`)%>%as.data.frame()%>%subset(.,!is.na(.$Freq)) %>% subset(.,.$Var2!="no cluster") #sub group in here
-
-Table<-table(LabelWide$species, LabelWide$`Loc. Forest Cover (%)`)%>%as.data.frame()%>%subset(.,!is.na(.$Freq)) %>% subset(.,.$Var2!="no cluster") #sub group in here
+Table<-table(LabelWide$species, LabelWide$`Loc. Forest Age (yrs)`)%>% as.data.frame()%>%subset(.,!is.na(.$Freq)) %>% subset(.,.$Var2!="no cluster") #sub reg. group in here
+Table<-table(LabelWide$species, LabelWide$`Loc. Prop. Conifer`)%>%as.data.frame()%>%subset(.,!is.na(.$Freq)) %>% subset(.,.$Var2!="no cluster") 
+Table<-table(LabelWide$species, LabelWide$`Loc. Forest Cover (%)`)%>%as.data.frame()%>%subset(.,!is.na(.$Freq)) %>% subset(.,.$Var2!="no cluster") 
 
 # frequency
 only1<-Table%>%group_by(Var1)%>%summarize(sum=sum(Freq))
@@ -575,15 +560,8 @@ output[[i]]<-data.frame(spp=spp.i,
 
 # Proportion showing significant clustering? ----------------
 probabilitylist<-do.call(rbind,output)
-nrow(probabilitylist)
-nrow(subset(probabilitylist,probabilitylist$prob<0.05))
-51/69
-41/44
-#5,10,27  # BANS; BHCO; FOSP
-LocCov<-probabilitylist
-RegCov<-probabilitylist
-
-LocCov$spp %notin% RegCov$spp
+nrow(probabilitylist) # tot
+nrow(subset(probabilitylist,probabilitylist$prob<0.05)) # sig spp
 
 # Jaccard similarity ---
 Sim<-read.csv("WithinSppJaccardMean_AdaptiveScalingMay29.csv") %>%.[-1]
@@ -592,10 +570,6 @@ Sim$means<-round(Sim$means,2)
 # isolate the broadly distributed species
 Simbroad<-subset(Sim,Sim$n >=8)# from 8 BCR cutoff above
 Simbroad1<-Simbroad%>%group_by(Var)%>%summarize(mean=mean(means),min=min(means), max=max(means), n=length(means))
-
-
-##################################################################
-
 
 Sim2<-pivot_wider(Sim, names_from=Var,values_from=c(means,n))
 Sim2 <- Sim2 %>% select("species","means_Land_closure",
@@ -688,7 +662,7 @@ LabelWide<-merge(LabelWide,Performance,by=c("species","BCR"))
 LabelWide$ForestSpecies<-ifelse(LabelWide$species %in% nonforest,"Non-forest/Forest-Edge","Forest")
 
 # species names
-namefile<-read.csv("C:/Users/andrake/OneDrive - NRCan RNCan/Desktop/HabitatAssociation_SCANFIage/Classification_species_name_file.csv")
+namefile<-read.csv("C:/XXXXXXXXXXX/Classification_species_name_file.csv")
 LabelWide<-merge(namefile[-1],LabelWide,by.x="Species.code",by.y="species")
 
 LabelWide<-LabelWide%>%
