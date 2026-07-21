@@ -1,13 +1,13 @@
-###############################################
-# Species Classification V5 - HPC Optimized
-# Anna Drake - modified from Elly Knight's script
-# April 22, 2026
-################################################
+###############################################################
+# title:   Species classification (A2) Tuning models using HPC
+# author:  Anna Drake - modified from Elly Knight's script
+# created: April 22, 2026
+###############################################################
+
 library(dismo)
 library(gbm)
 library(dplyr)
 library(tidyr)
-
 
 # Get command line arguments (Task ID from Slurm) ----------------------
 args <- commandArgs(trailingOnly = TRUE)
