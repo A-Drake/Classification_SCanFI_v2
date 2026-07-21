@@ -1,9 +1,9 @@
-#################################################
-# Species Classification V5 - SCANFI age
-# B. Model forest-species relationships
-# Anna Drake
-# September 2, 2025
-################################################
+###############################################################
+# title:   Species classification B) Model forest-species 
+# relationships using HPC
+# author:  Anna Drake 
+# created: April 2, 2026
+###############################################################
 
 require(gbm)
 require(terra)
