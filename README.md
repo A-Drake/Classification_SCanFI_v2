@@ -1,6 +1,7 @@
 Associated code for the manuscript: "Classifying boreal landbirds to facilitate multi-species approaches 
 to national-level conservation and forest degradation analyses"
-Anna Drake, Elly Knight, Lisa Venier, Mannfred Boehm, Luc Guindon, David Correia, Diana Stralberg
+
+by Anna Drake, Elly Knight, Lisa Venier, Mannfred Boehm, Luc Guindon, David Correia, Diana Stralberg
 
 Forest landbirds have high potential as indicators of changes in forest state including forest degradation. 
 Multi-species responses may better-inform degradation assessments so long as species are grouped 
@@ -12,9 +13,9 @@ cover, proportion conifer, and forest age. We describe this pattern as a selecti
 domain of a given covariate. Selection curves were generated for every species-ecoregion in our dataset. 
 
 Describing these curves involved three steps: 
-(1) quantifying predicted species use of covariate values (n=32) and the availability of these values, 
-(2) calculating selection ratios from proportional use:availability, and 
-(3) fitting the resulting ratios to a selection curve and associated confidence intervals.
+(1) quantifying predicted species use of covariate values (n=32) and the availability of these values (Script A-B), 
+(2) calculating selection ratios from proportional use:availability (Script B-C) , and 
+(3) fitting the resulting ratios to a selection curve and associated confidence intervals (Script D-E).
 
 Analyses were completed in R. Those labelled "Compute Canada" were scripted to run using HPC. The associated 
 shell script is provided at the bottom of these R. scripts
