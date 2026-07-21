@@ -1,9 +1,9 @@
-###################################################
-### Species Classification 
-### A. Prepare Covariate and Prediction Raster layers - SCANFI V2
-### by Anna Drake
-### February 3 2026 ####
-##################################################
+###########################################################
+# title:   Species classification (A1) Prepare Covariates 
+# and Prediction layers
+# author:  Anna Drake
+# created: Feb 3, 2026
+###########################################################
 
 require(terra)
 require(dplyr)
